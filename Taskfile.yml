@@ -1,0 +1,47 @@
+version: '3'
+
+vars:
+  APP_NAME: MyGit
+  BIN_DIR: bin
+  PACKAGE_MANAGER: npm
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  GOOS: '{{.GOOS | default OS}}'
+
+env:
+  GOWORK: 'off'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+tasks:
+  build:
+    summary: Build the application for the host platform
+    cmds:
+      - task: '{{.GOOS}}:build'
+  package:
+    summary: Package the application for the host platform
+    cmds:
+      - task: '{{.GOOS}}:package'
+  run:
+    summary: Run the built application
+    cmds:
+      - task: '{{.GOOS}}:run'
+  dev:
+    summary: Start Wails and Vite with automatic rebuilds
+    cmds:
+      - go tool wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+  bindings:
+    summary: Generate TypeScript interfaces and named service calls
+    cmds:
+      - go tool wails3 generate bindings -ts -i -names
+  check:
+    summary: Run frontend checks and Go analysis
+    cmds:
+      - go vet ./...
+      - cmd: npm run check
+        dir: frontend
+      - cmd: npm test
+        dir: frontend

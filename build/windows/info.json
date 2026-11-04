@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "0.1.0",
+			"CompanyName": "MyGit",
+			"FileDescription": "A worktree-centered Git workspace",
+			"LegalCopyright": "Copyright 2026 MyGit contributors",
+			"ProductName": "MyGit",
+			"Comments": "This is a comment"
+		}
+	}
+}

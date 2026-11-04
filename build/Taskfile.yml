@@ -1,0 +1,52 @@
+version: '3'
+
+tasks:
+  go:mod:tidy:
+    internal: true
+    run: once
+    cmds: [go mod tidy]
+
+  install:frontend:deps:
+    run: once
+    dir: frontend
+    sources: [package.json, package-lock.json]
+    generates: [node_modules]
+    cmds: [npm ci]
+
+  generate:bindings:
+    run: once
+    deps: [go:mod:tidy]
+    cmds:
+      - go tool wails3 generate bindings -f '{{.BUILD_FLAGS}}' -ts -i -names
+
+  build:frontend:
+    run: once
+    deps:
+      - task: install:frontend:deps
+      - task: generate:bindings
+        vars:
+          BUILD_FLAGS:
+            ref: .BUILD_FLAGS
+    dir: frontend
+    cmds:
+      - npm run {{if eq .DEV "true"}}build:dev{{else}}build{{end}}
+
+  generate:icons:
+    run: once
+    dir: build
+    sources: [appicon.png, 'appicon.icon/**/*']
+    generates: [windows/icon.ico, darwin/icons.icns]
+    cmds:
+      - go tool wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+
+  dev:frontend:
+    dir: frontend
+    deps: [install:frontend:deps]
+    cmds: [npm run dev]
+    env:
+      WAILS_VITE_PORT: '{{.VITE_PORT}}'
+
+  update:build-assets:
+    dir: build
+    cmds:
+      - go tool wails3 update build-assets -name "{{.APP_NAME}}" -binaryname "{{.APP_NAME}}" -config config.yml -dir .

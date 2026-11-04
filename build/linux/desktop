@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=MyGit
+Comment=A worktree-centered Git workspace
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/MyGit %u
+Terminal=false
+Type=Application
+Icon=MyGit
+Categories=Utility;
+StartupWMClass=MyGit
+
+ 

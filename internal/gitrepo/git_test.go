@@ -1,0 +1,315 @@
+package gitrepo
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestHistoryReadsCommitsRefsAndCheckouts(t *testing.T) {
+	t.Parallel()
+	g := Git{}
+	repo := t.TempDir()
+	git(t, repo, "init", "-q", "-b", "main")
+	if commits, err := g.Commits(repo, Refs{}); err != nil || len(commits) != 0 {
+		t.Fatalf("repository without commits: %v %v", commits, err)
+	}
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("1\n"), 0644)
+	os.MkdirAll(filepath.Join(repo, "dir"), 0755)
+	os.WriteFile(filepath.Join(repo, "dir", "b.txt"), []byte("b\n"), 0644)
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "init")
+	git(t, repo, "tag", "-a", "v1", "-m", "first")
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("2\n"), 0644)
+	git(t, repo, "commit", "-q", "-am", "second", "-m", "Body line.",
+		"-m", "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nco-authored-by: Bot <NoReply@anthropic.com>\nCo-authored-by: Ann <ann@example.com>")
+	wt := filepath.Join(t.TempDir(), "side")
+	git(t, repo, "worktree", "add", "-q", "-b", "side", wt)
+	git(t, repo, "update-ref", "refs/remotes/origin/main", "main")
+	git(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	commits, err := g.Commits(wt, Refs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 2 || commits[0].Subject != "second" || !strings.HasPrefix(commits[0].Body, "Body line.\n\nCo-Authored-By:") ||
+		!slices.Equal(commits[0].CoAuthors, []Person{{"Claude Opus 5.5", "noreply@anthropic.com"}, {"Ann", "ann@example.com"}}) ||
+		len(commits[1].CoAuthors) != 0 ||
+		commits[0].Author != "t" || len(commits[0].Parents) != 1 || commits[0].Parents[0] != commits[1].Hash ||
+		len(commits[1].Parents) != 0 || !slices.Contains(commits[1].Refs, "tag: v1") ||
+		!slices.Contains(commits[0].Refs, "HEAD -> side") || !slices.Contains(commits[0].Refs, "main") || commits[0].AuthorDate.IsZero() {
+		t.Fatalf("commits: %+v", commits)
+	}
+
+	refs, err := g.Refs(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := func(list []Ref) string {
+		var s []string
+		for _, r := range list {
+			s = append(s, r.Name)
+		}
+		return strings.Join(s, ",")
+	}
+	if names(refs.Branches) != "main,side" || names(refs.Remotes) != "origin/main" || names(refs.Tags) != "v1" ||
+		refs.Tags[0].Hash != commits[1].Hash {
+		t.Fatalf("refs: %+v", refs)
+	}
+
+	git(t, repo, "remote", "add", "origin", "git@github.com:o/r.git")
+	git(t, repo, "remote", "add", "web", "https://user@GitHub.com/o/r")
+	git(t, repo, "remote", "add", "other", "https://gitlab.com/o/github.com")
+	git(t, repo, "remote", "add", "local", "/tmp/github.com")
+	if remotes, err := g.GitHubRemotes(wt); err != nil || len(remotes) != 4 || !remotes["origin"] || !remotes["web"] || remotes["other"] || remotes["local"] {
+		t.Fatalf("GitHub remotes: %v %v", remotes, err)
+	}
+	if urls, err := g.RemoteURLs(wt); err != nil || urls["origin"] != "git@github.com:o/r.git" || urls["web"] != "https://user@GitHub.com/o/r" {
+		t.Fatalf("remote URLs: %v %v", urls, err)
+	}
+
+	checkouts, err := g.Checkouts(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, _ := filepath.EvalSymlinks(repo)
+	side, _ := filepath.EvalSymlinks(wt)
+	if len(checkouts) != 2 || checkouts[0].Branch != "main" || checkouts[1].Branch != "side" ||
+		checkouts[0].Head != commits[0].Hash || canonical(checkouts[0].Path) != top || canonical(checkouts[1].Path) != side {
+		t.Fatalf("checkouts: %+v", checkouts)
+	}
+
+	describe := func(changes Changes) string {
+		var s []string
+		for _, f := range changes.Files {
+			before, after, err := g.FileVersions(changes, f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s = append(s, fmt.Sprintf("%c %s +%d -%d %q %q", f.Status, f.Path, f.Added, f.Deleted, before, after))
+		}
+		return strings.Join(s, "\n")
+	}
+	// The worktree's later edit stays out of the commits' files.
+	os.WriteFile(filepath.Join(wt, "a.txt"), []byte("3\n"), 0644)
+	changes, err := g.CommitChanges(wt, commits[0].Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := describe(changes); got != `M a.txt +1 -1 "1\n" "2\n"` {
+		t.Fatalf("second commit:\n%s", got)
+	}
+	root, err := g.CommitChanges(wt, commits[1].Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := describe(root); got != "A a.txt +1 -0 \"\" \"1\\n\"\nA dir/b.txt +1 -0 \"\" \"b\\n\"" {
+		t.Fatalf("root commit:\n%s", got)
+	}
+	files, err := g.CommitFiles(wt, commits[0].Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := describe(files); got != "A a.txt +0 -0 \"\" \"2\\n\"\nA dir/b.txt +0 -0 \"\" \"b\\n\"" {
+		t.Fatalf("files:\n%s", got)
+	}
+	// The worktree's files are read from disk, untracked ones included and
+	// deleted ones left out.
+	os.WriteFile(filepath.Join(wt, "new.txt"), []byte("n\n"), 0644)
+	os.Remove(filepath.Join(wt, "dir", "b.txt"))
+	files, err = g.WorktreeFiles(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := describe(files); got != "A a.txt +0 -0 \"\" \"3\\n\"\nA new.txt +0 -0 \"\" \"n\\n\"" {
+		t.Fatalf("worktree files:\n%s", got)
+	}
+}
+
+func canonical(path string) string {
+	resolved, _ := filepath.EvalSymlinks(path)
+	return resolved
+}
+
+func TestStashSavesChangesWithOrWithoutUntrackedFiles(t *testing.T) {
+	t.Parallel()
+	g := Git{}.withEnv("GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	repo := testRepo(t)
+	if err := g.SaveStash(repo, "", true); err != ErrNothingToStash {
+		t.Fatalf("clean: %v", err)
+	}
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("2\n"), 0644)
+	os.WriteFile(filepath.Join(repo, "new.txt"), []byte("new\n"), 0644)
+
+	// Without untracked files, the new file stays in the worktree.
+	if err := g.SaveStash(repo, "tracked", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "new.txt")); err != nil {
+		t.Fatalf("untracked file: %v", err)
+	}
+	if err := g.SaveStash(repo, "", true); err != nil {
+		t.Fatal(err)
+	}
+	stashes, err := g.Stashes(repo)
+	if err != nil || len(stashes) != 2 || stashes[0].Name != "stash@{0}" || !strings.HasPrefix(stashes[0].Message, "WIP on main:") ||
+		stashes[1].Message != "On main: tracked" || stashes[1].Date.IsZero() {
+		t.Fatalf("stashes: %+v %v", stashes, err)
+	}
+	for i, want := range []string{"new.txt", "a.txt"} {
+		changes, err := g.StashChanges(repo, stashes[i].Hash)
+		if err != nil || len(changes.Files) != 1 || changes.Files[0].Path != want || changes.Files[0].Added != 1 {
+			t.Fatalf("stash %d: %+v %v", i, changes, err)
+		}
+	}
+}
+
+func TestFileRemovedFromIndexListsOnceAsModified(t *testing.T) {
+	t.Parallel()
+	g := Git{}.withEnv("GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	repo := testRepo(t)
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("1\n2\n"), 0644)
+	git(t, repo, "rm", "-q", "--cached", "a.txt")
+	head, _ := g.Run(repo, "rev-parse", "HEAD")
+	check := func(name string, changes Changes, err error) {
+		t.Helper()
+		if err != nil || len(changes.Files) != 1 {
+			t.Fatalf("%s: %+v %v", name, changes, err)
+		}
+		f := changes.Files[0]
+		if f.Path != "a.txt" || f.Status != 'M' || f.Added != 1 || f.Deleted != 0 {
+			t.Fatalf("%s: %+v", name, f)
+		}
+		if before, after, err := g.FileVersions(changes, f); err != nil || string(before) != "1\n" || string(after) != "1\n2\n" {
+			t.Fatalf("%s versions: %q %q %v", name, before, after, err)
+		}
+	}
+	changes, err := g.WorktreeChanges(repo, "")
+	check("worktree", changes, err)
+	changes, err = g.DiffBetween(repo, head, "")
+	check("compare", changes, err)
+	if err := g.SaveStash(repo, "", true); err != nil {
+		t.Fatal(err)
+	}
+	stashes, _ := g.Stashes(repo)
+	changes, err = g.StashChanges(repo, stashes[0].Hash)
+	check("stash", changes, err)
+}
+
+func TestApplyStashDropsItUnlessKeptOrConflicting(t *testing.T) {
+	t.Parallel()
+	g := Git{}.withEnv("GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	repo := testRepo(t)
+	save := func(content, message string) string {
+		t.Helper()
+		os.WriteFile(filepath.Join(repo, "a.txt"), []byte(content), 0644)
+		if err := g.SaveStash(repo, message, true); err != nil {
+			t.Fatal(err)
+		}
+		stashes, _ := g.Stashes(repo)
+		return stashes[0].Hash
+	}
+	older, newer := save("older\n", "older"), save("newer\n", "newer")
+	read := func() string { data, _ := os.ReadFile(filepath.Join(repo, "a.txt")); return string(data) }
+	count := func() int { stashes, _ := g.Stashes(repo); return len(stashes) }
+
+	// Kept, the stash stays listed.
+	if err := g.ApplyStash(repo, newer, false); err != nil || read() != "newer\n" || count() != 2 {
+		t.Fatalf("kept: %q, %d stashes, %v", read(), count(), err)
+	}
+	// A conflict keeps it even when asked to delete it.
+	if err := g.ApplyStash(repo, older, true); err == nil || count() != 2 {
+		t.Fatalf("conflict: %d stashes, %v", count(), err)
+	}
+	git(t, repo, "checkout", "--", "a.txt")
+	// Applied cleanly, it is deleted by its hash, not its position.
+	if err := g.ApplyStash(repo, older, true); err != nil || read() != "older\n" {
+		t.Fatalf("applied: %q, %v", read(), err)
+	}
+	if stashes, _ := g.Stashes(repo); len(stashes) != 1 || stashes[0].Hash != newer {
+		t.Fatalf("left: %+v", stashes)
+	}
+}
+
+func TestRestoreFileToCommit(t *testing.T) {
+	t.Parallel()
+	g := Git{}.withEnv("GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	repo := t.TempDir()
+	git(t, repo, "init", "-q", "-b", "main")
+	write := func(name, text string) {
+		t.Helper()
+		os.WriteFile(filepath.Join(repo, name), []byte(text), 0644)
+	}
+	read := func(name string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(repo, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	write("a.txt", "one\n")
+	write("gone.txt", "gone\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "first")
+	first, _ := g.Run(repo, "rev-parse", "HEAD")
+	write("a.txt", "two\n")
+	os.Remove(filepath.Join(repo, "gone.txt"))
+	write("new.txt", "new\n")
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-q", "-m", "second")
+	second, _ := g.Run(repo, "rev-parse", "HEAD")
+
+	// A tracked change returns to the version the commit holds in both the
+	// worktree and the index.
+	write("a.txt", "three\n")
+	git(t, repo, "add", "a.txt")
+	if err := g.RestoreFile(repo, first, "a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read("a.txt"); got != "one\n" {
+		t.Fatalf("worktree: %q", got)
+	}
+	if data, err := g.IndexFile(repo, "a.txt"); err != nil || string(data) != "one\n" {
+		t.Fatalf("index: %q, %v", data, err)
+	}
+
+	// A file the commit deleted is restored, and one it added is removed.
+	write("gone.txt", "back\n")
+	if err := g.RestoreFile(repo, first, "gone.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read("gone.txt"); got != "gone\n" {
+		t.Fatalf("restored: %q", got)
+	}
+	write("new.txt", "changed\n")
+	if err := g.RestoreFile(repo, first, "new.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("new.txt stayed: %v", err)
+	}
+	if files, _ := g.Run(repo, "ls-files", "--", "new.txt"); files != "" {
+		t.Fatalf("new.txt stayed in the index: %q", files)
+	}
+
+	// The second commit's version can be restored as well.
+	if err := g.RestoreFile(repo, second, "a.txt"); err != nil || read("a.txt") != "two\n" {
+		t.Fatalf("second: %q, %v", read("a.txt"), err)
+	}
+}
+
+func git(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v %s", args, err, out)
+	}
+}

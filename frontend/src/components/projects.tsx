@@ -1,0 +1,406 @@
+import { useState } from "react";
+import {
+  Folder,
+  FolderOpen,
+  GitFork,
+  Pin,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  ChevronRight,
+  Github,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import { Desktop, Workspace, type ProjectNode } from "@/lib/api";
+import { basename } from "@/lib/utils";
+import { copy, report, useWorkbench } from "@/lib/workbench";
+import { useT } from "@/lib/i18n";
+import { IconButton, Section } from "./shared";
+
+export function ProjectSidebar() {
+  const w = useWorkbench(),
+    t = useT();
+  const [group, setGroup] = useState<{ id: string; name: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const filtered = w.projects.filter((p) =>
+    `${basename(p.Path)} ${p.Path}`.toLowerCase().includes(query.toLowerCase()),
+  );
+  const newGroup = () => setGroup({ id: crypto.randomUUID(), name: "" });
+
+  function projectRow(node: ProjectNode) {
+    return (
+      <ContextMenu key={node.Path}>
+        <ContextMenuTrigger asChild>
+          <button
+            type="button"
+            className="nav-row"
+            data-active={w.project === node.Path}
+            onClick={() => w.selectProject(node.Path)}
+            title={node.Path}
+          >
+            {node.Source === "github" ? <Github /> : <GitFork />}
+            <span className="truncate">{basename(node.Path)}</span>
+            {node.Pinned && (
+              <Pin className="ml-auto !size-3 text-muted-foreground" />
+            )}
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-52">
+          <ContextMenuItem onSelect={() => report(Desktop.OpenPath(node.Path))}>
+            {t("Open folder")}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => copy(node.Path)}>
+            {t("Copy path")}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onSelect={() =>
+              w.update(
+                Workspace.UpdateProject(
+                  node.Path,
+                  "pinned",
+                  String(!node.Pinned),
+                ),
+              )
+            }
+          >
+            {t(node.Pinned ? "Unpin" : "Pin")}
+          </ContextMenuItem>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>{t("Move to group")}</ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuItem
+                onSelect={() =>
+                  w.update(Workspace.UpdateProject(node.Path, "group", ""))
+                }
+              >
+                {t("Ungrouped")}
+              </ContextMenuItem>
+              {(w.state?.Groups || []).map((g) => (
+                <ContextMenuItem
+                  key={g.ID}
+                  onSelect={() =>
+                    w.update(Workspace.UpdateProject(node.Path, "group", g.ID))
+                  }
+                >
+                  {g.Name}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            className="text-destructive"
+            onSelect={() =>
+              w.update(Workspace.UpdateProject(node.Path, "removed", "true"))
+            }
+          >
+            {t("Remove project")}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+  function treeRow(node: ProjectNode, root = false): React.ReactNode {
+    if (node.Removed) return null;
+    if (node.Repository)
+      return node.Pinned || node.Group ? null : projectRow(node);
+    const children = (node.Children || []).filter((n): n is ProjectNode => !!n);
+    return (
+      <div key={node.Path}>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <button
+              type="button"
+              className="nav-row"
+              onClick={() =>
+                w.update(
+                  Workspace.UpdateProject(
+                    node.Path,
+                    "open",
+                    String(!node.Open),
+                  ),
+                )
+              }
+            >
+              <ChevronRight
+                className={`!size-3 transition-transform ${node.Open ? "rotate-90" : ""}`}
+              />
+              {node.Open ? <FolderOpen /> : <Folder />}
+              <span className="truncate" title={node.Path}>
+                {basename(node.Path)}
+              </span>
+            </button>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem
+              onSelect={() => report(Desktop.OpenPath(node.Path))}
+            >
+              {t("Open folder")}
+            </ContextMenuItem>
+            {root && (
+              <>
+                <ContextMenuItem onSelect={w.addFolder}>
+                  {t("Add folder")}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onSelect={() => w.update(Workspace.RestoreProjects())}
+                >
+                  {t("Restore removed projects")}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  onSelect={() => w.update(Workspace.RemoveFolder(node.Path))}
+                >
+                  {t("Remove folder")}
+                </ContextMenuItem>
+              </>
+            )}
+          </ContextMenuContent>
+        </ContextMenu>
+        {node.Open && (
+          <div className="ml-3 border-l pl-1">
+            {children.map((child) => treeRow(child))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <aside className="project-sidebar" aria-label={t("Projects")}>
+      <div className="flex h-12 shrink-0 items-center gap-2 px-4">
+        <GitFork className="size-5 text-primary" />
+        <strong className="text-base font-semibold tracking-tight">
+          MyGit
+        </strong>
+        <div className="ml-auto">
+          <IconButton label="Add folder" onClick={w.addFolder}>
+            <Plus className="size-4" />
+          </IconButton>
+        </div>
+      </div>
+      <div className="px-3 pb-2">
+        <button
+          type="button"
+          onClick={() => w.setPalette(true)}
+          className="flex h-8 w-full items-center gap-2 rounded-md border bg-background/70 px-2 text-xs text-muted-foreground"
+        >
+          <Search className="size-3.5" />
+          {t("Search projects")}
+          <kbd className="ml-auto text-[10px]">⌘ K</kbd>
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
+        {query ? (
+          <>{filtered.map(projectRow)}</>
+        ) : (
+          <>
+            <Section
+              title="Pinned"
+              count={w.projects.filter((p) => p.Pinned).length}
+            >
+              {w.projects.filter((p) => p.Pinned).map(projectRow)}
+            </Section>
+            <Section
+              title="Repositories"
+              count={w.projects.length}
+              defaultOpen={false}
+            >
+              {w.projects.map(projectRow)}
+            </Section>
+            {(w.state?.Groups || []).map((g) => (
+              <ContextMenu key={g.ID}>
+                <ContextMenuTrigger asChild>
+                  <div>
+                    <Section
+                      title={g.Name}
+                      count={
+                        w.projects.filter((p) => p.Group === g.ID && !p.Pinned)
+                          .length
+                      }
+                    >
+                      {w.projects
+                        .filter((p) => p.Group === g.ID && !p.Pinned)
+                        .map(projectRow)}
+                    </Section>
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onSelect={newGroup}>
+                    {t("New group")}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => setGroup({ id: g.ID, name: g.Name })}
+                  >
+                    {t("Rename group")}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => w.update(Workspace.SetGroup(g.ID, ""))}
+                  >
+                    {t("Delete group")}
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            ))}
+            <Section
+              title="Ungrouped projects"
+              action={
+                <IconButton label="New group" onClick={newGroup}>
+                  <Plus className="size-3" />
+                </IconButton>
+              }
+            >
+              {(w.state?.Trees || [])
+                .filter(
+                  (n): n is ProjectNode =>
+                    !!n && !!w.state?.Roots?.includes(n.Path),
+                )
+                .map((n) => treeRow(n, true))}
+            </Section>
+          </>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1 border-t px-3 py-2">
+        <Input
+          aria-label={t("Filter refs…")}
+          className="h-7 flex-1 border-0 bg-transparent px-1 text-xs shadow-none"
+          placeholder={t("Search projects")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <IconButton label="Refresh" onClick={() => report(w.scan())}>
+          <RefreshCw className="size-3.5" />
+        </IconButton>
+        <IconButton label="Settings" onClick={() => w.setSettings(true)}>
+          <Settings className="size-3.5" />
+        </IconButton>
+      </div>
+      <Dialog
+        open={!!group}
+        onOpenChange={(open) => {
+          if (!open) setGroup(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("Group name")}</DialogTitle>
+            <DialogDescription>{t("Projects")}</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!group?.name.trim()) return;
+              await w.update(Workspace.SetGroup(group.id, group.name.trim()));
+              setGroup(null);
+            }}
+          >
+            <Input
+              autoFocus
+              aria-label={t("Group name")}
+              value={group?.name || ""}
+              onChange={(e) =>
+                setGroup((g) => g && { ...g, name: e.target.value })
+              }
+            />
+            <DialogFooter className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setGroup(null)}
+              >
+                {t("Cancel")}
+              </Button>
+              <Button disabled={!group?.name.trim()}>{t("Save")}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </aside>
+  );
+}
+
+export function ProjectPalette() {
+  const w = useWorkbench(),
+    t = useT();
+  const choose = (fn: () => void) => {
+    w.setPalette(false);
+    fn();
+  };
+  return (
+    <CommandDialog
+      open={w.palette}
+      onOpenChange={w.setPalette}
+      title={t("Search projects")}
+      description={t("Search repositories and commands…")}
+    >
+      <CommandInput placeholder={t("Search repositories and commands…")} />
+      <CommandList>
+        <CommandEmpty>{t("No matching projects")}</CommandEmpty>
+        <CommandGroup heading={t("Repositories")}>
+          {w.projects.map((p) => (
+            <CommandItem
+              key={p.Path}
+              value={`${basename(p.Path)} ${p.Path}`}
+              onSelect={() => choose(() => w.selectProject(p.Path))}
+            >
+              <GitFork />
+              <span>{basename(p.Path)}</span>
+              <span className="ml-auto max-w-64 truncate text-xs text-muted-foreground">
+                {p.Path}
+              </span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+        <CommandSeparator />
+        <CommandGroup>
+          <CommandItem onSelect={() => choose(w.addFolder)}>
+            <Plus />
+            {t("Add folder")}
+          </CommandItem>
+          <CommandItem onSelect={() => choose(() => w.setSettings(true))}>
+            <Settings />
+            {t("Settings")}
+          </CommandItem>
+          <CommandItem
+            onSelect={() =>
+              choose(() => {
+                void w.update(Workspace.RestoreProjects());
+              })
+            }
+          >
+            {t("Restore removed projects")}
+          </CommandItem>
+        </CommandGroup>
+      </CommandList>
+    </CommandDialog>
+  );
+}

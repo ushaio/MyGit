@@ -1,0 +1,11 @@
+/bin/
+/.task/
+/.wails/
+/frontend/node_modules/
+/frontend/dist/*
+!/frontend/dist/.gitkeep
+/frontend/*.tsbuildinfo
+/frontend/test-results/
+/frontend/playwright-report/
+*.syso
+.DS_Store
