@@ -1,9 +1,11 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import {
   Code2,
+  ExternalLink,
   Eye,
   EyeOff,
   Folder,
+  FolderOpen,
   Palette,
   Plus,
   Sparkles,
@@ -27,8 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Workspace, type Preferences } from "@/lib/api";
-import { useWorkbench } from "@/lib/workbench";
+import { Desktop, Workspace, type Preferences } from "@/lib/api";
+import { report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
 import { IconButton } from "./shared";
 
@@ -78,12 +80,23 @@ export function SettingsDialog() {
   const [saving, setSaving] = useState(false);
   const [section, setSection] = useState("general");
   const [reveal, setReveal] = useState(false);
+  const [dataPath, setDataPath] = useState("");
   useEffect(() => {
     if (w.settings && w.state) {
       setPreferences({ ...w.state.Preferences });
       setSection("general");
       setReveal(false);
     }
+  }, [w.settings]);
+  useEffect(() => {
+    if (!w.settings) return;
+    let alive = true;
+    Workspace.DataPath()
+      .then((value) => alive && setDataPath(value))
+      .catch(() => alive && setDataPath(""));
+    return () => {
+      alive = false;
+    };
   }, [w.settings]);
   if (!preferences) return null;
   const address = (preferences.AIURL || "").trim();
@@ -228,6 +241,27 @@ export function SettingsDialog() {
                   </IconButton>
                 </div>
               ))}
+            </div>
+            <div className="grid gap-1.5 border-t pt-3">
+              <button
+                type="button"
+                className="nav-row text-xs"
+                aria-label={t("Open data location")}
+                disabled={!dataPath}
+                onClick={() => report(Desktop.OpenPath(dataPath))}
+              >
+                <FolderOpen />
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {t("Open data location")}
+                </span>
+                <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+              </button>
+              <span
+                className="select-text break-all px-2 text-[11px] text-muted-foreground"
+                title={dataPath}
+              >
+                {dataPath}
+              </span>
             </div>
           </div>
         );

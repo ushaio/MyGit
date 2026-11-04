@@ -13,6 +13,14 @@ export function AddFolder(path: string): $CancellablePromise<workspace$0.State> 
     return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.AddFolder", path);
 }
 
+/**
+ * DataPath names the folder holding the workspace file, creating it first so
+ * opening the location works on a fresh profile.
+ */
+export function DataPath(): $CancellablePromise<string> {
+    return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.DataPath");
+}
+
 export function PinRef(path: string, ref: string, pin: boolean): $CancellablePromise<workspace$0.State> {
     return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.PinRef", path, ref, pin);
 }

@@ -233,3 +233,20 @@ func TestPreferencesKeepAISettings(t *testing.T) {
 		t.Fatal("an AI address without a scheme was accepted")
 	}
 }
+
+func TestDataDirectoryHoldsTheWorkspaceFile(t *testing.T) {
+	config := t.TempDir()
+	s, err := NewStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Dir() != filepath.Clean(config) {
+		t.Fatalf("data directory: %s", s.Dir())
+	}
+	if err := s.SetDraft("README", "keep me"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir(), "workspace.json")); err != nil {
+		t.Fatal("the data directory does not hold the workspace file")
+	}
+}

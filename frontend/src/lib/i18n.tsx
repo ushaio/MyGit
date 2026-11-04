@@ -190,6 +190,8 @@ const zh: Record<string, string> = {
   "Enter an http(s) address.": "请输入 http(s) 地址。",
   "Show key": "显示密钥",
   "Hide key": "隐藏密钥",
+  "Open data location": "打开数据位置",
+  "Data location": "数据位置",
 };
 const Language = createContext("zh-CN");
 export function LanguageProvider({

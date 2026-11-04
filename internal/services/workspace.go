@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"os"
 
 	"mygit-wails3/internal/workspace"
 )
@@ -12,6 +13,13 @@ func NewWorkspaceService(store *workspace.Store) *WorkspaceService {
 	return &WorkspaceService{store: store}
 }
 func (s *WorkspaceService) State() workspace.State { return s.store.Snapshot() }
+
+// DataPath names the folder holding the workspace file, creating it first so
+// opening the location works on a fresh profile.
+func (s *WorkspaceService) DataPath() (string, error) {
+	dir := s.store.Dir()
+	return dir, os.MkdirAll(dir, 0700)
+}
 func (s *WorkspaceService) Refresh(ctx context.Context) (workspace.State, error) {
 	return s.store.Refresh(ctx)
 }

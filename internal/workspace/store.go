@@ -83,6 +83,10 @@ func NewStore(dir string) (*Store, error) {
 	return s, nil
 }
 
+// Dir names the folder that holds the workspace file, so the app can show the
+// user where its local data lives.
+func (s *Store) Dir() string { return filepath.Dir(s.path) }
+
 func clone(state State) State {
 	data, _ := json.Marshal(state)
 	var result State

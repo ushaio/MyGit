@@ -68,3 +68,12 @@ test('settings list categories on the left and save AI credentials', async ({ pa
   await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.state.Preferences.AIURL)).toBe('https://api.example.com/v1');
   expect(await page.evaluate(() => (window as any).__mygitTestBackend.state.Preferences.AIKey)).toBe('sk-test');
 });
+
+test('settings open the local data location', async ({ page }) => {
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', {name: 'Folders', exact: true}).click();
+  await expect(dialog.getByText('C:/Users/test/.mygit-wails3', {exact: true})).toBeVisible();
+  await dialog.getByRole('button', {name: 'Open data location', exact: true}).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.opened)).toEqual(['C:/Users/test/.mygit-wails3']);
+});
