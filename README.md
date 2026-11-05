@@ -65,9 +65,11 @@
 
 <p>
   <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-linux.do-1f9cf0?logo=discourse&logoColor=white" /></a>
+  <a href="https://github.com/oneo-me/onegit"><img alt="OneGit" src="https://img.shields.io/badge/OneGit-oneo--me%2Fonegit-181717?logo=github&logoColor=white" /></a>
 </p>
 
 - [LINUX DO](https://linux.do)
+- [OneGit](https://github.com/oneo-me/onegit)
 
 ## 📄 许可证
 
