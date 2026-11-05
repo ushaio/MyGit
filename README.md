@@ -66,10 +66,12 @@
 <p>
   <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-linux.do-1f9cf0?logo=discourse&logoColor=white" /></a>
   <a href="https://github.com/oneo-me/onegit"><img alt="OneGit" src="https://img.shields.io/badge/OneGit-oneo--me%2Fonegit-181717?logo=github&logoColor=white" /></a>
+  <a href="https://github.com/dark-hxx/CLI-Manager"><img alt="CLI-Manager" src="https://img.shields.io/badge/CLI--Manager-dark--hxx%2FCLI--Manager-181717?logo=github&logoColor=white" /></a>
 </p>
 
 - [LINUX DO](https://linux.do)
 - [OneGit](https://github.com/oneo-me/onegit)
+- [CLI-Manager](https://github.com/dark-hxx/CLI-Manager)
 
 ## 📄 许可证
 
