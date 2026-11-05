@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import {
   Check,
   ChevronDown,
   ChevronRight,
   File,
   Folder,
+  Loader2,
   Plus,
   Minus,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AI,
   Git,
   Workspace,
   Desktop,
@@ -73,13 +82,15 @@ export function FileBrowser({
     loading: boolean;
   } | null>(null);
   const blameGeneration = useRef(0);
+  const loadedKey = useRef("");
   const current = request.Mode === "changes",
     key = JSON.stringify(request);
   useEffect(() => {
     let alive = true;
+    const fresh = loadedKey.current !== key;
     setLoading(true);
     setError("");
-    setFiles([]);
+    if (fresh) setFiles([]);
     Git.Changes(request)
       .then((value) => {
         if (!alive) return;
@@ -104,7 +115,10 @@ export function FileBrowser({
         if (alive) setError(errorMessage(error));
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+          loadedKey.current = key;
+        }
       });
     return () => {
       alive = false;
@@ -161,20 +175,32 @@ export function FileBrowser({
       : [file.Path];
   }
   function stage(list: FileChange[], area: number) {
-    if (list.length)
-      void w.execute(
+    if (!list.length) return;
+    const target = area === 1 ? 2 : 1;
+    const moving = new Set(list.map(fileKey));
+    const moved = <T extends FileChange>(file: T): T =>
+      moving.has(fileKey(file)) ? { ...file, Area: target } : file;
+    // Move the rows now so the click feels instant; the reload below reconciles
+    // with what git actually reports.
+    setFiles((old) => old.map(moved));
+    setActive((old) => (old ? moved(old) : old));
+    void w
+      .execute(
         action(area === 1 ? "unstage" : "stage", request.Path, {
           Area: area,
           Files: list.map((f) => f.Path),
         }),
-      );
+      )
+      .then((ok) => {
+        if (!ok) w.refresh();
+      });
   }
   function fileRow(file: FileChange, depth: number) {
     return (
       <ContextMenu key={fileKey(file)}>
         <ContextMenuTrigger asChild>
           <div
-            className="flex items-center gap-1"
+            className="group flex items-center gap-1"
             style={{ paddingLeft: depth * 10 }}
             onContextMenu={() => {
               if (!chosen.has(fileKey(file))) {
@@ -225,6 +251,34 @@ export function FileBrowser({
               >
                 {String.fromCharCode(file.Status)}
               </span>
+              {current && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="ml-1 grid size-4 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
+                  aria-label={`${t(file.Area === 1 ? "Unstage file" : "Stage file")} ${file.Path}`}
+                  title={`${t(file.Area === 1 ? "Unstage file" : "Stage file")} ${file.Path}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActive(file);
+                    stage([file], file.Area);
+                  }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      stage([file], file.Area);
+                    }
+                  }}
+                >
+                  {file.Area === 1 ? (
+                    <Minus className="size-3" />
+                  ) : (
+                    <Plus className="size-3" />
+                  )}
+                </span>
+              )}
             </button>
           </div>
         </ContextMenuTrigger>
@@ -384,7 +438,7 @@ export function FileBrowser({
         );
       });
   }
-  if (loading) return <Loading />;
+  if (loading && loadedKey.current !== key) return <Loading />;
   if (error) return <ErrorNotice error={error} retry={w.refresh} />;
   const visible = files.filter((file) =>
     file.Path.toLowerCase().includes(query.toLowerCase()),
@@ -506,10 +560,17 @@ function CommitForm() {
     t = useT();
   const [message, setMessage] = useState(w.state?.Drafts?.[w.path] || "");
   const [amend, setAmend] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     latest = useRef(message),
     dirty = useRef(false);
   const path = w.path;
+  // Dragging the box taller is for reading the draft in front of you; it must
+  // not follow you to the next worktree or survive the commit that empties it.
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (box.current) box.current.style.height = "";
+  }, [path]);
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
@@ -531,6 +592,27 @@ function CommitForm() {
         .catch((error) => toast.error(errorMessage(error)));
     }, 400);
   }
+  // generate asks the configured model for a commit message written from the
+  // staged diff. It replaces the draft, but keeps the previous text one click
+  // away in the toast, so a model reply never silently discards typed work.
+  async function generate() {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const text = (await AI.CommitMessage(path)).trim();
+      if (!text) return;
+      const previous = message.trim();
+      edit(text);
+      if (previous && previous !== text)
+        toast(t("Replaced the commit draft"), {
+          action: { label: t("Undo"), onClick: () => edit(previous) },
+        });
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setGenerating(false);
+    }
+  }
   async function commit(push = false) {
     if (!message.trim() || w.busy) return;
     if (timer.current) clearTimeout(timer.current);
@@ -551,6 +633,7 @@ function CommitForm() {
       if (success) {
         setMessage("");
         latest.current = "";
+        if (box.current) box.current.style.height = "";
       }
     } catch (error) {
       toast.error(errorMessage(error));
@@ -567,19 +650,35 @@ function CommitForm() {
       <label htmlFor="commit-message" className="text-xs font-medium">
         {t("Commit message")}
       </label>
-      <Textarea
-        id="commit-message"
-        value={message}
-        onChange={(e) => edit(e.target.value)}
-        placeholder={t("Summary and optional description")}
-        className="min-h-24 resize-y bg-background text-xs"
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            e.preventDefault();
-            void commit();
-          }
-        }}
-      />
+      <div className="relative">
+        <Textarea
+          ref={box}
+          id="commit-message"
+          value={message}
+          onChange={(e) => edit(e.target.value)}
+          placeholder={t("Summary and optional description")}
+          className="h-24 resize-y overflow-y-auto bg-background pr-10 text-xs"
+          style={{ fieldSizing: "fixed" } as CSSProperties}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void commit();
+            }
+          }}
+        />
+        <IconButton
+          label="Generate commit message"
+          className="absolute top-1.5 right-1.5"
+          disabled={!!w.busy || generating}
+          onClick={() => void generate()}
+        >
+          {generating ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Sparkles className="size-4" />
+          )}
+        </IconButton>
+      </div>
       <label className="flex items-center gap-2 text-xs text-muted-foreground">
         <Checkbox
           checked={amend}

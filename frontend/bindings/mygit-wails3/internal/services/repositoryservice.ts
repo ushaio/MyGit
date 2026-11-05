@@ -55,6 +55,11 @@ export function RebasePlan(path: string, base: string): $CancellablePromise<gitr
     return $Call.ByName("mygit-wails3/internal/services.RepositoryService.RebasePlan", path, base);
 }
 
+/**
+ * Snapshot takes no lane: reads must never queue behind a five minute fetch.
+ * Git itself keeps a reader from seeing a torn index, and a value that raced a
+ * write is one refresh away from correct.
+ */
 export function Snapshot(path: string): $CancellablePromise<$models.Repository> {
     return $Call.ByName("mygit-wails3/internal/services.RepositoryService.Snapshot", path);
 }

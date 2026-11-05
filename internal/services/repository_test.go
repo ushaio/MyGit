@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mygit-wails3/internal/gitrepo"
 	"mygit-wails3/internal/workspace"
@@ -202,7 +203,7 @@ func TestEmptyAndBareRepositories(t *testing.T) {
 		t.Fatalf("bare: %+v %v", r, err)
 	}
 }
-func TestRepositoryPathValidationAndBusyWrite(t *testing.T) {
+func TestRepositoryPathValidation(t *testing.T) {
 	s, path := testService(t)
 	if _, err := s.File(fileRequest(path, "../outside", gitrepo.AreaUnstaged)); err == nil {
 		t.Fatal("path escape accepted")
@@ -210,11 +211,59 @@ func TestRepositoryPathValidationAndBusyWrite(t *testing.T) {
 	if err := s.Execute(context.Background(), Action{Path: path, Kind: "branch", Name: "--help", Ref: "HEAD"}); err == nil {
 		t.Fatal("option accepted as name")
 	}
-	lock := s.lock(path)
-	lock.Lock()
-	if err := s.Execute(context.Background(), Action{Path: path, Kind: "branch", Name: "new", Ref: "HEAD"}); err == nil || !strings.Contains(err.Error(), "running") {
-		lock.Unlock()
+}
+func TestWritesQueueInsteadOfFailing(t *testing.T) {
+	s, path := testService(t)
+	// A second write waits for the first: a fast click must not become a toast.
+	release, err := s.lane(path).local.acquire(context.Background(), "stage", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Execute(context.Background(), Action{Path: path, Kind: "branch", Name: "queued", Ref: "HEAD"})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("write ran while the lane was held: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	if err := <-done; err != nil {
+		t.Fatalf("queued write: %v", err)
+	}
+	// A remote lane holder must not block local index work.
+	release, err = s.lane(path).remote.acquire(context.Background(), "fetch", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Execute(context.Background(), Action{Path: path, Kind: "branch", Name: "during-fetch", Ref: "HEAD"}); err != nil {
+		release()
+		t.Fatalf("write during fetch: %v", err)
+	}
+	release()
+	// A commit cannot be queued twice: replaying it would commit twice.
+	queue := s.lane(path)
+	if !queue.claim("commit") {
+		t.Fatal("first commit claim rejected")
+	}
+	if queue.claim("commit") {
+		t.Fatal("duplicate commit claim accepted")
+	}
+	queue.release("commit")
+	if !queue.claim("commit") {
+		t.Fatal("commit claim not released")
+	}
+	queue.release("commit")
+	// Waiting past the limit names the holder instead of hanging.
+	indexWait = 20 * time.Millisecond
+	defer func() { indexWait = 15 * time.Second }()
+	release, err = queue.local.acquire(context.Background(), "merge", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if err := s.Execute(context.Background(), Action{Path: path, Kind: "branch", Name: "late", Ref: "HEAD"}); err == nil || !strings.Contains(err.Error(), "merge") {
 		t.Fatalf("busy write: %v", err)
 	}
-	lock.Unlock()
 }

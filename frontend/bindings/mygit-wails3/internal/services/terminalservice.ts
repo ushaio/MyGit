@@ -13,6 +13,21 @@ export function Close(id: string): $CancellablePromise<void> {
     return $Call.ByName("mygit-wails3/internal/services.TerminalService.Close", id);
 }
 
+/**
+ * Commands returns the shortcut commands saved for a project.
+ */
+export function Commands(project: string): $CancellablePromise<$models.TerminalCommand[] | null> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.Commands", project);
+}
+
+/**
+ * Profiles lists the shells detected on this machine so the terminal sidebar
+ * can offer a command list. Unavailable profiles stay visible but disabled.
+ */
+export function Profiles(): $CancellablePromise<$models.TerminalProfile[] | null> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.Profiles");
+}
+
 export function Read(id: string, offset: number): $CancellablePromise<$models.TerminalOutput> {
     return $Call.ByName("mygit-wails3/internal/services.TerminalService.Read", id, offset);
 }
@@ -21,8 +36,17 @@ export function Resize(id: string, columns: number, rows: number): $CancellableP
     return $Call.ByName("mygit-wails3/internal/services.TerminalService.Resize", id, columns, rows);
 }
 
-export function Start(path: string, columns: number, rows: number): $CancellablePromise<string> {
-    return $Call.ByName("mygit-wails3/internal/services.TerminalService.Start", path, columns, rows);
+/**
+ * SaveCommands validates and stores a project's full shortcut command list,
+ * filling in IDs for new entries. It returns the normalised list so the UI can
+ * keep the assigned IDs.
+ */
+export function SaveCommands(project: string, commands: $models.TerminalCommand[] | null): $CancellablePromise<$models.TerminalCommand[] | null> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.SaveCommands", project, commands);
+}
+
+export function Start(path: string, columns: number, rows: number, profile: string): $CancellablePromise<string> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.Start", path, columns, rows, profile);
 }
 
 export function Write(id: string, data: string): $CancellablePromise<void> {

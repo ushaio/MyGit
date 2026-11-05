@@ -29,8 +29,6 @@ func (s *RepositoryService) ExportFile(req FileRequest, operation string) error 
 	if !filepath.IsLocal(filepath.FromSlash(req.File)) {
 		return errors.New("invalid repository-relative path")
 	}
-	lock := s.lock(req.Request.Path)
-	lock.RLock()
 	changes, err := s.changes(req.Request)
 	var data []byte
 	if err == nil {
@@ -53,7 +51,6 @@ func (s *RepositoryService) ExportFile(req FileRequest, operation string) error 
 			}
 		}
 	}
-	lock.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -68,9 +65,6 @@ func (s *RepositoryService) Patch(path, revision string, stash bool) (string, er
 	if err := safeRef(revision); err != nil {
 		return "", err
 	}
-	lock := s.lock(path)
-	lock.RLock()
-	defer lock.RUnlock()
 	if stash {
 		data, err := s.git.StashPatch(path, revision)
 		return string(data), err

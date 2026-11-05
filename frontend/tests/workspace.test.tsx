@@ -4,18 +4,46 @@ import { beforeEach, expect, it, vi } from "vitest"
 import { ThemeProvider } from "@/lib/theme"
 import { Call } from "@wailsio/runtime"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { Toaster } from "@/components/ui/sonner"
 import { WorkbenchProvider } from "@/lib/workbench"
 import App from "@/App"
 import { alpha, beta, createBackend, linked } from "./backend"
 
+vi.mock("@/components/terminal", () => ({ TerminalPane: () => null }))
 let backend: ReturnType<typeof createBackend>
 beforeEach(() => { backend = createBackend(); vi.mocked(Call.ByName).mockReset(); vi.mocked(Call.ByName).mockImplementation(backend.call as typeof Call.ByName) })
-function mount() { return render(<ThemeProvider attribute="class" forcedTheme="light"><TooltipProvider delayDuration={0}><WorkbenchProvider><App /></WorkbenchProvider></TooltipProvider></ThemeProvider>) }
+function mount() { return render(<ThemeProvider attribute="class" forcedTheme="light"><TooltipProvider delayDuration={0}><WorkbenchProvider><App /></WorkbenchProvider><Toaster /></TooltipProvider></ThemeProvider>) }
 async function ready() { mount(); await screen.findByRole("button", { name: "Stage all" }); return userEvent.setup() }
 
+it("badges projects with open terminals and expands their terminal list", async () => {
+  const user = await ready()
+  const alphaRow = screen.getAllByRole("button", { name: "alpha" }).find((el) => el.classList.contains("nav-project"))!
+  fireEvent.contextMenu(alphaRow, { button: 2, clientX: 120, clientY: 120 })
+  await user.click(await screen.findByRole("menuitem", { name: "New terminal" }))
+  await waitFor(() => expect(backend.terminals).toEqual([alpha]))
+  const toggle = await screen.findByRole("button", { name: "Show terminals (1)" })
+  expect(toggle).toHaveAttribute("aria-expanded", "false")
+  await user.click(toggle)
+  expect(toggle).toHaveAttribute("aria-expanded", "true")
+  await screen.findByRole("button", { name: "Terminal 1 alpha" })
+
+  fireEvent.contextMenu(alphaRow, { button: 2, clientX: 120, clientY: 120 })
+  await user.click(await screen.findByRole("menuitem", { name: "New terminal" }))
+  await waitFor(() => expect(backend.terminals).toEqual([alpha, alpha]))
+  expect(await screen.findByRole("button", { name: "Show terminals (2)" })).toBeInTheDocument()
+  await screen.findByRole("button", { name: "Terminal 2 alpha" })
+  await user.click(screen.getByRole("button", { name: "Terminal 1 alpha" }))
+  await waitFor(() => expect(screen.getByRole("button", { name: "Terminal 1 alpha" })).toHaveAttribute("data-active", "true"))
+})
 it("loads a repository and stages actual selected files", async () => {
   const user = await ready()
   await user.click(screen.getByRole("button", { name: "Stage all" }))
+  await waitFor(() => expect(backend.writes).toHaveLength(1))
+  expect(backend.writes[0]).toMatchObject({ Kind: "stage", Path: alpha, Area: 2, Files: ["src/main.go"] })
+})
+it("stages a single file from the row action", async () => {
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: "Stage file src/main.go" }))
   await waitFor(() => expect(backend.writes).toHaveLength(1))
   expect(backend.writes[0]).toMatchObject({ Kind: "stage", Path: alpha, Area: 2, Files: ["src/main.go"] })
 })
@@ -57,6 +85,15 @@ it("retains a commit draft when leaving and returning to changes", async () => {
   await user.click(screen.getByRole("button", { name: /Current changes/ }))
   expect(await screen.findByRole("textbox", { name: "Commit message" })).toHaveValue("Keep this draft")
 })
+it("writes a commit message from the staged changes", async () => {
+  const user = await ready()
+  const box = screen.getByRole("textbox", { name: "Commit message" })
+  await user.type(box, "old draft")
+  await user.click(screen.getByRole("button", { name: "Generate commit message" }))
+  await waitFor(() => expect(box).toHaveValue("feat: describe the staged changes"))
+  await user.click(await screen.findByRole("button", { name: "Undo" }))
+  expect(box).toHaveValue("old draft")
+})
 it("refreshes without changing the chosen view", async () => {
   const user = await ready()
   await user.click(screen.getByRole("button", { name: "All commits" }))
@@ -84,9 +121,17 @@ it("keeps AI settings in a sectioned settings dialog", async () => {
   await user.click(within(dialog).getByRole("button", { name: "AI" }))
   await user.type(within(dialog).getByLabelText("API URL"), "https://api.example.com/v1")
   await user.type(within(dialog).getByLabelText("API Key"), "sk-test")
+  await user.click(within(dialog).getByRole("button", { name: "Fetch models" }))
+  await waitFor(() => expect(within(dialog).getByText("2 models available")).toBeInTheDocument())
+  await user.click(within(dialog).getByRole("combobox", { name: "Model" }))
+  await user.click(await screen.findByRole("option", { name: "deepseek-chat" }))
+  await user.type(within(dialog).getByLabelText("Commit message prompt"), "Write in Chinese.")
+  expect(await within(dialog).findByText("Show the built-in prompt")).toBeInTheDocument()
   await user.click(within(dialog).getByRole("button", { name: "Save" }))
   await waitFor(() => expect(backend.state.Preferences.AIURL).toBe("https://api.example.com/v1"))
   expect(backend.state.Preferences.AIKey).toBe("sk-test")
+  expect(backend.state.Preferences.AIModel).toBe("deepseek-chat")
+  expect(backend.state.Preferences.AICommitPrompt).toBe("Write in Chinese.")
 })
 it("opens the data location from the folders section", async () => {
   const user = await ready()

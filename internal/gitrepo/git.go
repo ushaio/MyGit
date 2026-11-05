@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -134,10 +135,33 @@ func (g Git) network(path string, args ...string) error {
 }
 
 // Top returns the top of the worktree containing path, failing outside a
-// repository.
+// repository. A status refresh asks for the same root several times and each
+// answer costs a git process, so remember it briefly.
 func (g Git) Top(path string) (string, error) {
-	return g.Run(path, "rev-parse", "--show-toplevel")
+	if cached, ok := topCache.Load(path); ok {
+		entry := cached.(topEntry)
+		if time.Since(entry.at) < topTTL {
+			return entry.top, nil
+		}
+	}
+	top, err := g.Run(path, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	topCache.Store(path, topEntry{top: top, at: time.Now()})
+	return top, nil
 }
+
+// topTTL bounds how long a worktree root is trusted: a repository can be moved
+// or replaced, and the cache only exists to spare repeated git processes.
+const topTTL = 2 * time.Minute
+
+type topEntry struct {
+	top string
+	at  time.Time
+}
+
+var topCache sync.Map
 
 // Unborn reports whether the worktree at path has no commit checked out yet.
 func (g Git) Unborn(path string) bool {
@@ -556,17 +580,49 @@ func (g Git) WorktreeStatus(path string) (Changes, error) {
 		return Changes{}, err
 	}
 	changes := Changes{Top: top}
-	staged := []string{"diff", "--cached"}
-	if !g.Unborn(top) {
+	// The three reads are independent; running them together turns four git
+	// startups into one, which is most of a status refresh on Windows.
+	var (
+		from                       string
+		index, worktree, untracked []FileChange
+		fromErr, indexErr          error
+		worktreeErr, untrackedErr  error
+	)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
 		// Pin the commit so the files read later match this list.
-		if changes.From, err = g.Run(top, "rev-parse", "--verify", "HEAD^{commit}"); err != nil {
-			return Changes{}, err
-		}
-		staged = append(staged, changes.From)
+		from, fromErr = g.Run(top, "rev-parse", "--verify", "HEAD^{commit}")
+	}()
+	go func() {
+		defer wg.Done()
+		index, indexErr = g.diffFiles(top, "diff", "--cached", "HEAD")
+	}()
+	go func() {
+		defer wg.Done()
+		worktree, worktreeErr = g.diffFiles(top, "diff")
+	}()
+	go func() {
+		defer wg.Done()
+		untracked, untrackedErr = g.untracked(top)
+	}()
+	wg.Wait()
+	if worktreeErr != nil {
+		return Changes{}, worktreeErr
 	}
-	index, err := g.diffFiles(top, staged...)
-	if err != nil {
-		return Changes{}, err
+	if untrackedErr != nil {
+		return Changes{}, untrackedErr
+	}
+	if fromErr == nil {
+		changes.From = from
+	} else if index, indexErr = g.diffFiles(top, "diff", "--cached"); indexErr != nil {
+		// An unborn branch has no HEAD to compare against; git then reads the
+		// index against the empty tree, which is the same listing.
+		return Changes{}, indexErr
+	}
+	if indexErr != nil {
+		return Changes{}, indexErr
 	}
 	for _, f := range index {
 		// A conflicted file has no single staged version; it lists as
@@ -575,14 +631,6 @@ func (g Git) WorktreeStatus(path string) (Changes, error) {
 			f.Area = AreaStaged
 			changes.Files = append(changes.Files, f)
 		}
-	}
-	worktree, err := g.diffFiles(top, "diff")
-	if err != nil {
-		return Changes{}, err
-	}
-	untracked, err := g.untracked(top)
-	if err != nil {
-		return Changes{}, err
 	}
 	worktree = append(worktree, untracked...)
 	// An unmerged file can appear as both U and M in the worktree diff;
@@ -793,6 +841,58 @@ func (g Git) FileAt(top, commit, path string) ([]byte, error) {
 // the index stages it.
 func (g Git) IndexFile(top, path string) ([]byte, error) {
 	return g.output(readTimeout, top, "cat-file", "blob", ":"+path)
+}
+
+// emptyTree is the object a repository without commits diffs the index against.
+const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+// stagedDiffLimit keeps the patch small enough for a model's context window.
+// An oversized request fails at the provider instead of degrading.
+const stagedDiffLimit = 48 << 10
+
+// StagedDiff renders what the index stages as an overview an assistant can
+// summarise: the file stat, the per-file status, then the patch. It returns an
+// empty string when nothing is staged.
+func (g Git) StagedDiff(path string) (string, error) {
+	top, err := g.Top(path)
+	if err != nil {
+		return "", err
+	}
+	base := "HEAD"
+	if g.Unborn(path) {
+		base = emptyTree
+	}
+	stat, err := g.Run(top, "diff", "--cached", base, "--stat", "--no-color", "--no-ext-diff")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(stat) == "" {
+		return "", nil
+	}
+	status, err := g.Run(top, "diff", "--cached", base, "--name-status", "--no-color", "--no-ext-diff")
+	if err != nil {
+		return "", err
+	}
+	patch, err := g.Run(top, "diff", "--cached", base, "--unified=3", "--no-color", "--no-ext-diff")
+	if err != nil {
+		return "", err
+	}
+	if len(patch) > stagedDiffLimit {
+		if cut := strings.LastIndexByte(patch[:stagedDiffLimit], '\n'); cut > 0 {
+			patch = patch[:cut]
+		} else {
+			patch = patch[:stagedDiffLimit]
+		}
+		patch += "\n… the patch was long and is cut here; more files follow"
+	}
+	return strings.Join([]string{
+		"Staged files:",
+		stat,
+		"Status:",
+		status,
+		"Patch:",
+		patch,
+	}, "\n"), nil
 }
 
 // pathsOf lists the paths files change, both of a rename's.

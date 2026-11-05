@@ -41,7 +41,9 @@ tasks:
     summary: Run frontend checks and Go analysis
     cmds:
       - go vet ./...
-      - cmd: npm run check
-        dir: frontend
-      - cmd: npm test
-        dir: frontend
+      - task: check:frontend
+  check:frontend:
+    dir: frontend
+    cmds:
+      - npm run check
+      - npm test

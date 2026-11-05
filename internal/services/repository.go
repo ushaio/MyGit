@@ -21,21 +21,28 @@ type RepositoryService struct {
 	git   gitrepo.Git
 	store *workspace.Store
 	files fileHost
-	locks sync.Map
+	lanes sync.Map
 }
 
 func NewRepositoryService(store *workspace.Store) *RepositoryService {
+	return &RepositoryService{git: gitrepo.Git{Env: gitEnv()}, store: store}
+}
+
+// gitEnv runs git without prompts or pagers. Anything that would wait for a
+// terminal is a bug here: failures have to surface as errors instead.
+func gitEnv() []string {
 	env := []string{}
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, "GIT_") {
 			env = append(env, entry)
 		}
 	}
-	env = append(env, "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true")
-	return &RepositoryService{git: gitrepo.Git{Env: env}, store: store}
+	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true")
 }
 
-func (s *RepositoryService) lock(path string) *sync.RWMutex {
+// lane is keyed on the resolved real path so two spellings of one worktree
+// share one queue.
+func (s *RepositoryService) lane(path string) *lane {
 	key, err := filepath.Abs(path)
 	if err == nil {
 		if real, err := filepath.EvalSymlinks(key); err == nil {
@@ -44,8 +51,8 @@ func (s *RepositoryService) lock(path string) *sync.RWMutex {
 	} else {
 		key = path
 	}
-	value, _ := s.locks.LoadOrStore(filepath.Clean(key), &sync.RWMutex{})
-	return value.(*sync.RWMutex)
+	value, _ := s.lanes.LoadOrStore(filepath.Clean(key), newLane())
+	return value.(*lane)
 }
 
 type Repository struct {
@@ -60,10 +67,10 @@ type Repository struct {
 	Operation gitrepo.Operation
 }
 
+// Snapshot takes no lane: reads must never queue behind a five minute fetch.
+// Git itself keeps a reader from seeing a torn index, and a value that raced a
+// write is one refresh away from correct.
 func (s *RepositoryService) Snapshot(ctx context.Context, path string) (Repository, error) {
-	lock := s.lock(path)
-	lock.RLock()
-	defer lock.RUnlock()
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
 	}
@@ -72,29 +79,59 @@ func (s *RepositoryService) Snapshot(ctx context.Context, path string) (Reposito
 		return Repository{}, err
 	}
 	r := Repository{Path: path, Bare: bare == "true", Changes: gitrepo.Changes{Top: path, Files: []gitrepo.FileChange{}}, Worktrees: []workspace.Worktree{}, Stashes: []gitrepo.Stash{}}
-	if r.Refs, err = s.git.Refs(path); err != nil {
-		return Repository{}, err
+	// Every read is independent, and each one starts git; run them together so
+	// a refresh costs one startup instead of seven.
+	var (
+		refsErr, remotesErr, changesErr       error
+		trackingErr, worktreesErr, stashesErr error
+		operationErr                          error
+		wg                                    sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		r.Refs, refsErr = s.git.Refs(path)
+	}()
+	go func() {
+		defer wg.Done()
+		r.Remotes, remotesErr = s.git.RemoteURLs(path)
+	}()
+	wg.Wait()
+	if refsErr != nil {
+		return Repository{}, refsErr
 	}
-	if r.Remotes, err = s.git.RemoteURLs(path); err != nil {
-		return Repository{}, err
+	if remotesErr != nil {
+		return Repository{}, remotesErr
 	}
 	if r.Bare {
-		return r, nil
+		return r, ctx.Err()
 	}
-	if r.Changes, err = s.git.WorktreeStatus(path); err != nil {
-		return Repository{}, err
-	}
-	if r.Tracking, err = s.git.Tracking(path); err != nil {
-		return Repository{}, err
-	}
-	if r.Worktrees, err = workspace.ListWorktrees(ctx, path); err != nil {
-		return Repository{}, err
-	}
-	if r.Stashes, err = s.git.Stashes(path); err != nil {
-		return Repository{}, err
-	}
-	if r.Operation, err = s.git.Operation(path); err != nil {
-		return Repository{}, err
+	wg.Add(5)
+	go func() {
+		defer wg.Done()
+		r.Changes, changesErr = s.git.WorktreeStatus(path)
+	}()
+	go func() {
+		defer wg.Done()
+		r.Tracking, trackingErr = s.git.Tracking(path)
+	}()
+	go func() {
+		defer wg.Done()
+		r.Worktrees, worktreesErr = workspace.ListWorktrees(ctx, path)
+	}()
+	go func() {
+		defer wg.Done()
+		r.Stashes, stashesErr = s.git.Stashes(path)
+	}()
+	go func() {
+		defer wg.Done()
+		r.Operation, operationErr = s.git.Operation(path)
+	}()
+	wg.Wait()
+	for _, failure := range []error{changesErr, trackingErr, worktreesErr, stashesErr, operationErr} {
+		if failure != nil {
+			return Repository{}, failure
+		}
 	}
 	return r, ctx.Err()
 }
@@ -119,9 +156,6 @@ func (s *RepositoryService) History(ctx context.Context, req HistoryRequest) (Hi
 	if err := safeRef(req.Ref); err != nil {
 		return HistoryPage{}, err
 	}
-	lock := s.lock(req.Path)
-	lock.RLock()
-	defer lock.RUnlock()
 	unborn := s.git.Unborn(req.Path)
 	if unborn {
 		refs, err := s.git.Run(req.Path, "for-each-ref", "--count=1")
@@ -218,9 +252,6 @@ func (s *RepositoryService) changes(req ChangeRequest) (gitrepo.Changes, error) 
 	}
 }
 func (s *RepositoryService) Changes(req ChangeRequest) (gitrepo.Changes, error) {
-	lock := s.lock(req.Path)
-	lock.RLock()
-	defer lock.RUnlock()
 	return s.changes(req)
 }
 
@@ -287,9 +318,6 @@ func (s *RepositoryService) file(req FileRequest) (FileContent, gitrepo.Changes,
 	return content, changes, nil
 }
 func (s *RepositoryService) File(req FileRequest) (FileContent, error) {
-	lock := s.lock(req.Request.Path)
-	lock.RLock()
-	defer lock.RUnlock()
 	content, _, err := s.file(req)
 	return content, err
 }
@@ -302,11 +330,11 @@ type LineSelection struct {
 }
 
 func (s *RepositoryService) ApplyLines(req LineSelection) error {
-	lock := s.lock(req.Request.Request.Path)
-	if !lock.TryLock() {
-		return errors.New("another operation is running in this worktree")
+	release, err := s.lane(req.Request.Request.Path).local.acquire(context.Background(), "apply-lines", indexWait)
+	if err != nil {
+		return err
 	}
-	defer lock.Unlock()
+	defer release()
 	if req.Request.Request.Mode != "changes" {
 		return errors.New("only current changes can be staged")
 	}

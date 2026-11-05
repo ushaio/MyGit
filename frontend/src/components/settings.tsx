@@ -1,4 +1,11 @@
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   Code2,
   ExternalLink,
@@ -6,8 +13,10 @@ import {
   EyeOff,
   Folder,
   FolderOpen,
+  Loader2,
   Palette,
   Plus,
+  RefreshCw,
   Sparkles,
   X,
 } from "lucide-react";
@@ -22,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -29,9 +39,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Desktop, Workspace, type Preferences } from "@/lib/api";
+import { AI, Desktop, Workspace, type AIModel, type Preferences } from "@/lib/api";
 import { report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
+import { errorMessage } from "@/lib/utils";
 import { IconButton } from "./shared";
 
 const sections: {
@@ -81,6 +92,13 @@ export function SettingsDialog() {
   const [section, setSection] = useState("general");
   const [reveal, setReveal] = useState(false);
   const [dataPath, setDataPath] = useState("");
+  const [models, setModels] = useState<AIModel[]>([]);
+  const [modelsStamp, setModelsStamp] = useState("");
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const [defaultPrompt, setDefaultPrompt] = useState("");
+  const loadingRef = useRef(false);
+  const stampRef = useRef("");
   useEffect(() => {
     if (w.settings && w.state) {
       setPreferences({ ...w.state.Preferences });
@@ -98,12 +116,67 @@ export function SettingsDialog() {
       alive = false;
     };
   }, [w.settings]);
+  // The built-in prompt is shown verbatim: an empty field means "use this", so
+  // the user edits from a known baseline instead of an empty box.
+  useEffect(() => {
+    if (!w.settings) return;
+    let alive = true;
+    AI.DefaultCommitPrompt()
+      .then((value) => alive && setDefaultPrompt(value || ""))
+      .catch(() => alive && setDefaultPrompt(""));
+    return () => {
+      alive = false;
+    };
+  }, [w.settings]);
+  // loadModels asks the endpoint for its catalogue. The result is stamped with
+  // the address and key it was fetched for, so editing either field drops the
+  // stale list instead of offering models the endpoint never advertised.
+  async function loadModels(url: string, key: string, force = false) {
+    const target = `${url}\n${key}`;
+    if (loadingRef.current || (!force && stampRef.current === target)) return;
+    loadingRef.current = true;
+    stampRef.current = target;
+    setLoadingModels(true);
+    setModelError("");
+    try {
+      const list = (await AI.Models(url, key)) || [];
+      setModels(list);
+      setModelsStamp(target);
+      if (!list.length) setModelError(t("The service returned no models."));
+    } catch (error) {
+      setModels([]);
+      setModelsStamp("");
+      stampRef.current = "";
+      setModelError(errorMessage(error));
+    } finally {
+      loadingRef.current = false;
+      setLoadingModels(false);
+    }
+  }
+  const autoAddress = (preferences?.AIURL || "").trim();
+  const autoKey = (preferences?.AIKey || "").trim();
+  useEffect(() => {
+    if (!w.settings || section !== "ai") return;
+    if (!/^https?:\/\/[^/?#\s]+/i.test(autoAddress)) return;
+    if (stampRef.current === `${autoAddress}\n${autoKey}`) return;
+    const timer = setTimeout(() => void loadModels(autoAddress, autoKey), 700);
+    return () => clearTimeout(timer);
+    // The catalogue is fetched once per address/key pair; typing only restarts
+    // the debounce timer, so the deps deliberately track the raw values.
+  }, [w.settings, section, autoAddress, autoKey]);
   if (!preferences) return null;
   const address = (preferences.AIURL || "").trim();
   const addressError =
     address && !/^https?:\/\/[^/?#\s]+/i.test(address)
       ? t("Enter an http(s) address.")
       : "";
+  const endpoint =
+    address && !addressError
+      ? `${address.replace(/\/+$/, "").replace(/\/models$/i, "")}/models`
+      : "";
+  const chosenModel = (preferences.AIModel || "").trim();
+  const shownModels =
+    modelsStamp && modelsStamp === `${address}\n${autoKey}` ? models : [];
   function select(
     key: keyof Preferences,
     label: string,
@@ -158,9 +231,18 @@ export function SettingsDialog() {
       case "ai":
         return (
           <div className="grid gap-5">
-            <p className="text-[11px] text-muted-foreground">
-              {t("Set the address and key of the AI service MyGit calls.")}
-            </p>
+            <div className="grid gap-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                {t(
+                  "Point MyGit at any OpenAI-compatible endpoint, fetch its model list, then pick the model to use.",
+                )}
+              </p>
+              {endpoint && (
+                <p className="select-text break-all font-mono text-[11px] text-muted-foreground/80">
+                  {t("Model list")}: {endpoint}
+                </p>
+              )}
+            </div>
             <Field
               label={t("API URL")}
               hint={t("For example https://api.example.com/v1.")}
@@ -207,6 +289,136 @@ export function SettingsDialog() {
                     <Eye className="size-4" />
                   )}
                 </IconButton>
+              </div>
+            </Field>
+            <Field
+              label={t("Model")}
+              hint={t("Leave it empty to use the endpoint default.")}
+            >
+              <div className="flex items-center gap-2">
+                {shownModels.length ? (
+                  <Select
+                    value={chosenModel || "__none__"}
+                    onValueChange={(value) =>
+                      setPreferences(
+                        (p) =>
+                          p && {
+                            ...p,
+                            AIModel: value === "__none__" ? "" : value,
+                          },
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full" aria-label={t("Model")}>
+                      <SelectValue placeholder={t("Choose a model")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">
+                        {t("Endpoint default")}
+                      </SelectItem>
+                      {shownModels.map((model) => (
+                        <SelectItem key={model.ID} value={model.ID}>
+                          {model.ID}
+                        </SelectItem>
+                      ))}
+                      {chosenModel &&
+                        !shownModels.some((m) => m.ID === chosenModel) && (
+                          <SelectItem value={chosenModel}>
+                            {chosenModel}
+                          </SelectItem>
+                        )}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    aria-label={t("Model")}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={t("For example deepseek-chat.")}
+                    value={preferences!.AIModel || ""}
+                    onChange={(e) =>
+                      setPreferences(
+                        (p) => p && { ...p, AIModel: e.target.value },
+                      )
+                    }
+                  />
+                )}
+                <IconButton
+                  label="Fetch models"
+                  disabled={loadingModels || !address || !!addressError}
+                  onClick={() => void loadModels(address, autoKey, true)}
+                >
+                  {loadingModels ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                </IconButton>
+              </div>
+              <div className="min-h-4 text-[11px]" aria-live="polite">
+                {loadingModels ? (
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    {t("Loading models…")}
+                  </span>
+                ) : modelError ? (
+                  <span role="alert" className="text-destructive">
+                    {modelError}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    {shownModels.length
+                      ? `${shownModels.length} ${t("models available")}`
+                      : t(
+                          "Fetch the list to choose a model instead of typing its identifier.",
+                        )}
+                  </span>
+                )}
+              </div>
+            </Field>
+            <Field
+              label={t("Commit message prompt")}
+              hint={t(
+                "Leave it empty to use the built-in prompt, which asks for English.",
+              )}
+            >
+              <Textarea
+                aria-label={t("Commit message prompt")}
+                className="h-28 resize-none overflow-y-auto font-mono text-[11px]"
+                style={{ fieldSizing: "fixed" } as CSSProperties}
+                spellCheck={false}
+                placeholder={t("Write the prompt in the language and style you want.")}
+                value={preferences!.AICommitPrompt || ""}
+                onChange={(e) =>
+                  setPreferences(
+                    (p) => p && { ...p, AICommitPrompt: e.target.value },
+                  )
+                }
+              />
+              <div className="grid gap-1">
+                {defaultPrompt && (
+                  <details className="text-[11px] text-muted-foreground">
+                    <summary className="w-fit cursor-pointer select-none">
+                      {t("Show the built-in prompt")}
+                    </summary>
+                    <p className="mt-1 whitespace-pre-wrap select-text">
+                      {defaultPrompt}
+                    </p>
+                  </details>
+                )}
+                {(preferences!.AICommitPrompt || "").trim() !== "" && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-auto w-fit px-0 text-[11px]"
+                    onClick={() =>
+                      setPreferences((p) => p && { ...p, AICommitPrompt: "" })
+                    }
+                  >
+                    {t("Restore the built-in prompt")}
+                  </Button>
+                )}
               </div>
             </Field>
           </div>

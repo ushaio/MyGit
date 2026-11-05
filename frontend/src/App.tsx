@@ -47,9 +47,7 @@ export default function App() {
 function WorkspaceWindow() {
   const w = useWorkbench(),
     t = useT();
-  const [page, setPage] = useState<"git" | "terminal">("git");
-  const [hasTerminal, setHasTerminal] = useState(false);
-  useEffect(() => { if (page === "terminal") setHasTerminal(true); }, [page]);
+  const { page } = w;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented || !(e.metaKey || e.ctrlKey)) return;
@@ -117,10 +115,14 @@ function WorkspaceWindow() {
                   variant="ghost"
                   size="sm"
                   className="h-8 gap-1.5 text-xs"
-                  disabled={disabled || !Object.keys(urls).length}
+                  disabled={
+                    disabled ||
+                    w.background === "fetch" ||
+                    !Object.keys(urls).length
+                  }
                   onClick={() => w.execute(action("fetch", w.path))}
                 >
-                  {w.busy === "fetch" ? (
+                  {w.background === "fetch" ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <Download className="size-3.5" />
@@ -181,7 +183,7 @@ function WorkspaceWindow() {
                       "rounded px-2 py-1 text-xs",
                       page === "git" && "bg-background shadow-xs",
                     )}
-                    onClick={() => setPage("git")}
+                    onClick={() => w.setPage("git")}
                   >
                     <GitCommitHorizontal className="inline size-3.5" /> Git
                   </button>
@@ -190,7 +192,7 @@ function WorkspaceWindow() {
                       "rounded px-2 py-1 text-xs",
                       page === "terminal" && "bg-background shadow-xs",
                     )}
-                    onClick={() => setPage("terminal")}
+                    onClick={w.showTerminal}
                   >
                     {t("Terminal")}
                   </button>
@@ -222,7 +224,7 @@ function WorkspaceWindow() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
-                    <DropdownMenuItem onSelect={() => setPage("terminal")}>
+                    <DropdownMenuItem onSelect={w.showTerminal}>
                       {t("Terminal")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
@@ -272,29 +274,29 @@ function WorkspaceWindow() {
               <div className="flex-1" />
             )}
           </div>
-          {hasTerminal && <Suspense fallback={<Loading />}><TerminalPane
-            visible={page === "terminal"}
-            path={w.repo?.Worktrees?.find((wt) => wt.Main)?.Path || w.project}
-          /></Suspense>}
+          {(page === "terminal" || w.terminals.length > 0) && (
+            <Suspense fallback={<Loading />}>
+              <TerminalPane visible={page === "terminal"} />
+            </Suspense>
+          )}
         </main>
       </div>
       <footer className="flex h-6 shrink-0 items-center gap-3 border-t bg-muted/50 px-3 text-[10px] text-muted-foreground">
         <span className="min-w-0 flex-1 truncate select-text" title={w.path}>
           {w.path}
         </span>
-        {w.busy ? (
+        {(w.busy || w.background) && (
           <span role="status" className="flex items-center gap-1">
             <Loader2 className="size-3 animate-spin" />
-            {t(w.busy)}
+            {t(w.busy || w.background)}
           </span>
-        ) : (
-          w.repo && (
-            <span>
-              {w.repo.Bare
-                ? t("Bare repository")
-                : `${w.repo.Changes.Files?.length || 0} ${t("Changes")}`}
-            </span>
-          )
+        )}
+        {!w.busy && !w.background && w.repo && (
+          <span>
+            {w.repo.Bare
+              ? t("Bare repository")
+              : `${w.repo.Changes.Files?.length || 0} ${t("Changes")}`}
+          </span>
         )}
       </footer>
       <ProjectPalette />

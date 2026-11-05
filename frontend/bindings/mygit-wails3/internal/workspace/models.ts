@@ -19,11 +19,14 @@ export interface Preferences {
     "SidebarWidth": number;
 
     /**
-     * AIURL and AIKey configure the AI service MyGit asks for help. The key
-     * is written only to the local workspace file, which the user owns.
+     * AIURL, AIKey, AIModel and AICommitPrompt configure the AI service MyGit
+     * asks for help. The key is written only to the local workspace file, which
+     * the user owns. An empty AICommitPrompt means the built-in prompt.
      */
     "AIURL": string;
     "AIKey": string;
+    "AIModel": string;
+    "AICommitPrompt": string;
 }
 
 export interface State {

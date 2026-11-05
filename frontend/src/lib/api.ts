@@ -1,10 +1,12 @@
 export {
+  AIService as AI,
   DesktopService as Desktop,
   RepositoryService as Git,
   WorkspaceService as Workspace,
   TerminalService as Term,
 } from "../../bindings/mygit-wails3/internal/services";
 export type {
+  AIModel,
   Action,
   ChangeRequest,
   FileRequest,
@@ -12,6 +14,9 @@ export type {
   Repository,
   HistoryPage,
   HistoryRequest,
+  LineSelection,
+  TerminalCommand,
+  TerminalProfile,
 } from "../../bindings/mygit-wails3/internal/services/models";
 export type {
   State as WorkspaceState,

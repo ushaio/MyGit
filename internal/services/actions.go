@@ -41,11 +41,23 @@ func (s *RepositoryService) Execute(ctx context.Context, a Action) error {
 			return errors.New("this operation requires confirmation")
 		}
 	}
-	lock := s.lock(a.Path)
-	if !lock.TryLock() {
+	queue := s.lane(a.Path)
+	if serialKinds[a.Kind] && !queue.claim(a.Kind) {
 		return errors.New("another operation is running in this worktree")
 	}
-	defer lock.Unlock()
+	if serialKinds[a.Kind] {
+		defer queue.release(a.Kind)
+	}
+	network := remoteKinds[a.Kind]
+	wait := indexWait
+	if network {
+		wait = networkWait
+	}
+	release, err := queue.pick(network).acquire(ctx, a.Kind, wait)
+	if err != nil {
+		return err
+	}
+	defer release()
 	g := s.git
 	files := []gitrepo.FileChange{}
 	if slices.Contains([]string{"stage", "unstage", "discard", "stash-files"}, a.Kind) {

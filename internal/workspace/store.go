@@ -27,10 +27,13 @@ type Preferences struct {
 	Editor       string
 	Wrap         bool
 	SidebarWidth int
-	// AIURL and AIKey configure the AI service MyGit asks for help. The key
-	// is written only to the local workspace file, which the user owns.
-	AIURL string
-	AIKey string
+	// AIURL, AIKey, AIModel and AICommitPrompt configure the AI service MyGit
+	// asks for help. The key is written only to the local workspace file, which
+	// the user owns. An empty AICommitPrompt means the built-in prompt.
+	AIURL          string
+	AIKey          string
+	AIModel        string
+	AICommitPrompt string
 }
 type State struct {
 	Version     int
@@ -337,6 +340,8 @@ func (s *Store) SetDraft(path, message string) error {
 }
 func (s *Store) SetPreferences(p Preferences) (State, error) {
 	p.AIURL, p.AIKey = strings.TrimSpace(p.AIURL), strings.TrimSpace(p.AIKey)
+	p.AIModel = strings.TrimSpace(p.AIModel)
+	p.AICommitPrompt = strings.TrimSpace(p.AICommitPrompt)
 	if p.AIURL != "" && !validAIURL(p.AIURL) {
 		return State{}, errors.New("enter an http(s) AI address")
 	}

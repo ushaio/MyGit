@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { useTheme } from "@/lib/theme";
-import { Plus, TerminalSquare, X } from "lucide-react";
-import { toast } from "sonner";
+import {
+  GitBranch,
+  Monitor,
+  Plus,
+  Shell,
+  SquareChevronRight,
+  SquareTerminal,
+  Terminal as TerminalIcon,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,151 +22,368 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Desktop, Term } from "@/lib/api";
-import { basename, cn, errorMessage } from "@/lib/utils";
-import { report } from "@/lib/workbench";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Desktop, Term, type TerminalCommand, type TerminalProfile } from "@/lib/api";
+import { cn, errorMessage } from "@/lib/utils";
+import { report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
-import { ErrorNotice, IconButton } from "./shared";
+import { IconButton } from "./shared";
 
-type Tab = { id: string; path: string; label: string };
-export function TerminalPane({
-  visible,
-  path,
-}: {
-  visible: boolean;
-  path: string;
-}) {
-  const t = useT();
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [active, setActive] = useState(""),
-    [error, setError] = useState("");
-  const starting = useRef(false),
-    alive = useRef(true),
-    dragged = useRef("");
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  const add = useCallback(async () => {
-    if (!path || starting.current) return;
-    starting.current = true;
-    setError("");
-    try {
-      const id = await Term.Start(path, 100, 30);
-      if (!alive.current) {
-        await Term.Close(id);
-        return;
-      }
-      setTabs((old) => [...old, { id, path, label: basename(path) }]);
-      setActive(id);
-    } catch (error) {
-      setError(errorMessage(error));
-    } finally {
-      starting.current = false;
-    }
-  }, [path]);
-  useEffect(() => {
-    if (visible && !tabs.length && !error) void add();
-  }, [visible, path]);
-  async function close(id: string) {
-    try {
-      await Term.Close(id);
-    } catch (error) {
-      toast.error(errorMessage(error));
-    }
-    setTabs((old) => {
-      const next = old.filter((tab) => tab.id !== id);
-      if (id === active) setActive(next.at(-1)?.id || "");
-      return next;
-    });
-  }
+export function TerminalPane({ visible }: { visible: boolean }) {
+  const w = useWorkbench(),
+    t = useT();
+  const dragged = useRef("");
+  const [form, setForm] = useState<{ initial: TerminalCommand | null } | null>(
+    null,
+  );
+  const tabs = w.terminalsFor(w.project);
   return (
     <section
-      className={cn("min-h-0 flex-1 flex-col", visible ? "flex" : "hidden")}
+      className={cn("min-h-0 flex-1", visible ? "flex" : "hidden")}
       aria-label={t("Terminal")}
     >
-      <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/40 px-2">
-        {tabs.map((tab, index) => (
-          <ContextMenu key={tab.id}>
-            <ContextMenuTrigger asChild>
-              <div
-                draggable
-                onDragStart={() => {
-                  dragged.current = tab.id;
-                }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const source = dragged.current;
-                  setTabs((old) => {
-                    const from = old.findIndex((item) => item.id === source);
-                    const to = old.findIndex((item) => item.id === tab.id);
-                    if (from < 0 || to < 0) return old;
-                    const next = [...old];
-                    const [item] = next.splice(from, 1);
-                    next.splice(to, 0, item);
-                    return next;
-                  });
-                }}
-                className={cn(
-                  "flex h-8 shrink-0 items-center rounded-md border border-transparent px-2 text-xs",
-                  active === tab.id && "border-border bg-background",
-                )}
-                title={tab.path}
-              >
-                <button
-                  className="flex items-center gap-2"
-                  onClick={() => setActive(tab.id)}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/40 px-2">
+          {tabs.map((tab) => (
+            <ContextMenu key={tab.id}>
+              <ContextMenuTrigger asChild>
+                <div
+                  draggable
+                  onDragStart={() => {
+                    dragged.current = tab.id;
+                  }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    w.moveTerminal(dragged.current, tab.id);
+                  }}
+                  className={cn(
+                    "flex h-8 shrink-0 items-center rounded-md border border-transparent px-2 text-xs",
+                    w.activeTerminal === tab.id && "border-border bg-background",
+                  )}
+                  title={tab.shell ? `${tab.shell} — ${tab.path}` : tab.path}
                 >
-                  <TerminalSquare className="size-3.5" />
-                  {tab.label} {index + 1}
-                </button>
-                <button
-                  className="ml-3 rounded p-1 hover:bg-muted"
-                  aria-label={t("Close terminal")}
-                  onClick={() => close(tab.id)}
+                  <button
+                    className="flex items-center gap-2"
+                    aria-label={
+                      tab.shell
+                        ? `${tab.label} — ${t(tab.shell)}`
+                        : tab.label
+                    }
+                    onClick={() => w.activateTerminal(tab)}
+                  >
+                    <ShellIcon profile={tab.profile} shell={tab.shell} />
+                    {tab.label}
+                  </button>
+                  <button
+                    className="ml-3 rounded p-1 hover:bg-muted"
+                    aria-label={t("Close terminal")}
+                    onClick={() => void w.closeTerminal(tab.id)}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onSelect={() => void w.closeTerminal(tab.id)}>
+                  {t("Close terminal")}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onSelect={() => void w.closeOtherTerminals(tab.id)}
                 >
-                  <X className="size-3" />
-                </button>
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent>
-              <ContextMenuItem onSelect={() => close(tab.id)}>
-                {t("Close terminal")}
-              </ContextMenuItem>
-              <ContextMenuItem
-                onSelect={() => {
-                  for (const other of tabs)
-                    if (other.id !== tab.id) void close(other.id);
-                }}
-              >
-                Close other terminals
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-        ))}
-        <IconButton label="New terminal" onClick={add}>
-          <Plus className="size-4" />
-        </IconButton>
-      </div>
-      {error && <ErrorNotice error={error} retry={add} />}
-      {!tabs.length && (
-        <div className="flex flex-1 items-center justify-center">
-          <Button variant="outline" onClick={add}>
-            {t("New terminal")}
-          </Button>
+                  {t("Close other terminals")}
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          ))}
+          <IconButton
+            label={t("New terminal")}
+            onClick={() => w.openTerminal(w.project)}
+          >
+            <Plus className="size-4" />
+          </IconButton>
         </div>
-      )}
-      {tabs.map((tab) => (
-        <TerminalViewport
-          key={tab.id}
-          id={tab.id}
-          active={visible && active === tab.id}
-        />
-      ))}
+        {!tabs.length && (
+          <div className="flex flex-1 items-center justify-center">
+            <Button variant="outline" onClick={() => w.openTerminal(w.project)}>
+              {t("New terminal")}
+            </Button>
+          </div>
+        )}
+        {tabs.map((tab) => (
+          <TerminalViewport
+            key={tab.id}
+            id={tab.id}
+            active={visible && w.activeTerminal === tab.id}
+          />
+        ))}
+      </div>
+      <aside
+        className="terminal-profiles"
+        aria-label={t("Terminal commands")}
+      >
+        <div className="terminal-profiles-title">
+          <span>{t("Terminal commands")}</span>
+          <IconButton
+            label={t("New command")}
+            onClick={() => setForm({ initial: null })}
+          >
+            <Plus className="size-3.5" />
+          </IconButton>
+        </div>
+        <div className="terminal-profiles-list">
+          {w.commands.map((command) => (
+            <ContextMenu key={command.ID}>
+              <ContextMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="terminal-profile"
+                  title={`${command.Label} — ${command.Command}${command.Path ? ` @ ${command.Path}` : ""}`}
+                  onClick={() => w.runCommand(command)}
+                >
+                  <TerminalSquare className="size-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate">{command.Label}</span>
+                      <span className="terminal-command-shell">
+                        {t(shellLabel(w.profiles, command.Profile))}
+                      </span>
+                    </span>
+                    <span className="terminal-profile-detail">
+                      {command.Command}
+                    </span>
+                    {command.Path && command.Path !== w.path && (
+                      <span className="terminal-profile-detail">
+                        {command.Path}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onSelect={() => setForm({ initial: command })}>
+                  {t("Edit command")}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onSelect={() =>
+                    void w.saveCommands(
+                      w.commands.filter((item) => item.ID !== command.ID),
+                    )
+                  }
+                >
+                  {t("Delete command")}
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          ))}
+          {!w.commands.length && (
+            <div className="terminal-profile-empty">
+              {t("No commands yet. Add one with +.")}
+            </div>
+          )}
+        </div>
+      </aside>
+      <CommandDialog
+        key={form ? form.initial?.ID || "new" : "closed"}
+        open={form !== null}
+        initial={form?.initial || null}
+        profiles={w.profiles}
+        defaultPath={w.path}
+        onClose={() => setForm(null)}
+        onSave={async (command) => {
+          const next = command.ID
+            ? w.commands.map((item) =>
+                item.ID === command.ID ? command : item,
+              )
+            : [...w.commands, command];
+          return w.saveCommands(next);
+        }}
+      />
     </section>
+  );
+}
+
+const SHELL_ICONS: Record<string, typeof TerminalSquare> = {
+  powershell: SquareChevronRight,
+  "windows powershell": SquareChevronRight,
+  pwsh: SquareChevronRight,
+  "powershell 7": SquareChevronRight,
+  gitbash: GitBranch,
+  "git bash": GitBranch,
+  wsl: Monitor,
+  cmd: SquareTerminal,
+  "command prompt": SquareTerminal,
+  bash: TerminalIcon,
+  zsh: Shell,
+};
+
+function ShellIcon({ profile, shell }: { profile: string; shell: string }) {
+  const Icon =
+    SHELL_ICONS[(profile || "").toLowerCase()] ||
+    SHELL_ICONS[(shell || "").toLowerCase()] ||
+    TerminalSquare;
+  return <Icon className="size-3.5 shrink-0" aria-hidden />;
+}
+
+function shellLabel(profiles: TerminalProfile[] | null, id: string) {
+  const profile = (profiles || []).find((item) => item.ID === id);
+  if (profile) return profile.Label;
+  const fallback = (profiles || []).find(
+    (item) => item.Default && item.Available,
+  );
+  return fallback?.Label || "Default shell";
+}
+
+function CommandDialog({
+  open,
+  initial,
+  profiles,
+  defaultPath,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  initial: TerminalCommand | null;
+  profiles: TerminalProfile[] | null;
+  defaultPath: string;
+  onClose: () => void;
+  onSave: (command: TerminalCommand) => Promise<boolean>;
+}) {
+  const t = useT();
+  const [label, setLabel] = useState(initial?.Label || "");
+  const [line, setLine] = useState(initial?.Command || "");
+  const [profile, setProfile] = useState(initial?.Profile || "");
+  const [path, setPath] = useState(initial?.Path || defaultPath);
+  const [saving, setSaving] = useState(false);
+  const fallback = (profiles || []).find(
+    (item) => item.Default && item.Available,
+  );
+  const shell = profile || fallback?.ID || "";
+  const valid = label.trim() !== "" && line.trim() !== "";
+  async function browse() {
+    try {
+      const folder = await Desktop.ChooseFolder();
+      if (folder) setPath(folder);
+    } catch {
+      // Cancelled or unavailable; keep the current path.
+    }
+  }
+  async function save() {
+    if (!valid || saving) return;
+    setSaving(true);
+    const saved = await onSave({
+      ID: initial?.ID || "",
+      Label: label.trim(),
+      Command: line.trim(),
+      Profile: shell,
+      Path: path.trim(),
+    });
+    setSaving(false);
+    if (saved) onClose();
+  }
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t(initial ? "Edit command" : "New command")}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "Commands run in the chosen shell inside the working directory — the project folder by default.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+            {t("Command name")}
+            <Input
+              aria-label={t("Command name")}
+              autoFocus
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder={t("For example: Dev server")}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+            {t("Command")}
+            <Input
+              aria-label={t("Command")}
+              className="font-mono"
+              value={line}
+              onChange={(event) => setLine(event.target.value)}
+              placeholder="npm run dev"
+            />
+          </label>
+          <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+            {t("Working directory")}
+            <div className="flex gap-1.5">
+              <Input
+                aria-label={t("Working directory")}
+                className="font-mono"
+                value={path}
+                onChange={(event) => setPath(event.target.value)}
+                placeholder={defaultPath}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => void browse()}
+              >
+                {t("Browse…")}
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+            {t("Terminal type")}
+            <Select value={shell} onValueChange={setProfile}>
+              <SelectTrigger className="w-full" aria-label={t("Terminal type")}>
+                <SelectValue placeholder={t("Default shell")} />
+              </SelectTrigger>
+              <SelectContent>
+                {(profiles || []).map((item) => (
+                  <SelectItem
+                    key={item.ID}
+                    value={item.ID}
+                    disabled={!item.Available}
+                  >
+                    {t(item.Label)}
+                    {!item.Available && ` — ${t("Not installed")}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button onClick={() => void save()} disabled={!valid || saving}>
+            {t("Save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

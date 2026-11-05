@@ -10,7 +10,7 @@ tasks:
     run: once
     dir: frontend
     sources: [package.json, package-lock.json]
-    generates: [node_modules]
+    generates: [node_modules/.package-lock.json]
     cmds: [npm ci]
 
   generate:bindings:

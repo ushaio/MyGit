@@ -45,23 +45,37 @@ export function DiffView({ request }: { request: FileRequest }) {
     [applying, setApplying] = useState(false);
   const [reload, setReload] = useState(0);
   const lastLine = useRef(0),
-    scroll = useRef<HTMLDivElement>(null);
-  const key = JSON.stringify(request);
+    scroll = useRef<HTMLDivElement>(null),
+    loadedKey = useRef("");
+  const key = JSON.stringify(request),
+    // Staging or unstaging the file being viewed must not blank the diff; only a
+    // different file or revision is a fresh load.
+    freshKey = JSON.stringify({ ...request, Area: 0 });
   useEffect(() => {
     let alive = true;
+    const fresh = loadedKey.current !== freshKey;
     setLoading(true);
     setError("");
-    setContent(null);
-    setSelected(new Set());
+    if (fresh) {
+      setContent(null);
+      setSelected(new Set());
+      lastLine.current = 0;
+    }
     Git.File(request)
       .then((value) => {
-        if (alive) setContent(value);
+        if (!alive) return;
+        setContent(value);
+        setSelected(new Set());
+        lastLine.current = 0;
       })
       .catch((error) => {
         if (alive) setError(errorMessage(error));
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+          loadedKey.current = freshKey;
+        }
       });
     return () => {
       alive = false;
@@ -102,7 +116,7 @@ export function DiffView({ request }: { request: FileRequest }) {
     if (!content || applying || w.busy) return;
     setApplying(true);
     try {
-      await Git.ApplyLines({
+      await w.applyLines({
         Request: request,
         Token: content.Token,
         Lines: [...selected],
@@ -162,7 +176,7 @@ export function DiffView({ request }: { request: FileRequest }) {
       </div>
     );
   }
-  if (loading) return <Loading />;
+  if (loading && loadedKey.current !== freshKey) return <Loading />;
   if (error)
     return <ErrorNotice error={error} retry={() => setReload((v) => v + 1)} />;
   if (!content) return null;

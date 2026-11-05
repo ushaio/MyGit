@@ -8,6 +8,14 @@ import * as gitrepo$0 from "../gitrepo/models.js";
 // @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
+/**
+ * AIModel is one entry of a service's model catalogue.
+ */
+export interface AIModel {
+    "ID": string;
+    "Owner": string;
+}
+
 export interface Action {
     "Path": string;
     "Kind": string;
@@ -96,9 +104,41 @@ export interface Repository {
     "Operation": gitrepo$0.Operation;
 }
 
+/**
+ * TerminalCommand is a user-maintained shortcut: a command line and the shell
+ * profile it should be typed into.
+ */
+export interface TerminalCommand {
+    "ID": string;
+    "Label": string;
+    "Command": string;
+    "Profile": string;
+
+    /**
+     * Path is the working directory the shortcut runs in. Empty means "use the
+     * project folder". It may point anywhere; the command still belongs to the
+     * project it is stored under.
+     */
+    "Path": string;
+}
+
 export interface TerminalOutput {
     "Data": string;
     "Offset": number;
     "Closed": boolean;
     "Reset": boolean;
+}
+
+/**
+ * TerminalProfile describes one shell the user can launch in a terminal tab.
+ */
+export interface TerminalProfile {
+    "ID": string;
+    "Label": string;
+    "Shell": string;
+    "Args": string[] | null;
+    "Detail": string;
+    "Kind": string;
+    "Available": boolean;
+    "Default": boolean;
 }

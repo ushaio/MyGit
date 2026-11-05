@@ -5,7 +5,7 @@ import { createBackend } from '/tests/backend.ts';
 const backend = createBackend();
 window.__mygitTestBackend = backend;
 const proxy = (name) => new Proxy({}, {get: (_, method) => (...args) => backend.call(name+'.'+String(method), ...args)});
-export const Workspace = proxy('WorkspaceService'), Git = proxy('RepositoryService'), Desktop = proxy('DesktopService'), Term = proxy('TerminalService');
+export const Workspace = proxy('WorkspaceService'), Git = proxy('RepositoryService'), Desktop = proxy('DesktopService'), Term = proxy('TerminalService'), AI = proxy('AIService');
 export function action(Kind, Path, values={}) {return {Kind,Path,Ref:'',Name:'',Value:'',Message:'',Remote:'',Files:[],Area:0,Confirm:false,Force:false,Keep:true,Untracked:true,NoCommit:false,Rebase:false,Autostash:false,UpdateRefs:false,Track:false,Tags:false,Parent:0,Mode:'',Plan:[],...values}}
 export function changeRequest(Path,Mode='changes',Revision='',extra={}) {return {Path,Mode,Revision,From:'',To:'',File:'',...extra}}
 `;
@@ -14,6 +14,45 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/src/lib/api.ts', route => route.fulfill({ contentType: 'application/javascript', body: mockAPI }));
   await page.goto('/');
   await expect(page.getByRole('button', {name: 'Stage all', exact: true})).toBeVisible();
+});
+
+test('terminal badge on the project row expands its terminal list', async ({ page }, info) => {
+  const row = page.locator('.nav-project').filter({ hasText: 'alpha' }).first();
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'New terminal', exact: true }).click();
+  const toggle = page.getByRole('button', { name: 'Show terminals (1)', exact: true });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(page.getByRole('button', { name: 'Terminal 1 alpha', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Git', exact: true }).click();
+  await page.screenshot({ path: info.outputPath('terminal-badge.png') });
+});
+
+test('terminal sidebar adds and runs shortcut commands', async ({ page }, info) => {
+  await page.getByRole('button', {name: 'Terminal', exact: true}).first().click();
+  const sidebar = page.getByRole('complementary', {name: 'Terminal commands', exact: true});
+  await expect(sidebar).toBeVisible();
+  await expect(sidebar.getByText('No commands yet. Add one with +.')).toBeVisible();
+  await sidebar.getByRole('button', {name: 'New command', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Command name', {exact: true}).fill('Dev server');
+  await dialog.getByLabel('Command', {exact: true}).fill('npm run dev');
+  await dialog.getByRole('combobox', {name: 'Terminal type', exact: true}).click();
+  await expect(page.getByRole('option', {name: /Git Bash/})).toHaveAttribute('aria-disabled', 'true');
+  await page.getByRole('option', {name: 'Command Prompt', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog).toBeHidden();
+  const entry = sidebar.getByRole('button', {name: /Dev server/});
+  await expect(entry).toContainText('npm run dev');
+  await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.terminalCommands)).toEqual([{ID: 'cmd-1', Label: 'Dev server', Command: 'npm run dev', Profile: 'cmd', Path: 'C:/Projects/alpha'}]);
+  await entry.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.terminalShells)).toEqual(['', 'cmd']);
+  await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.terminalWrites)).toEqual(['npm run dev\r']);
+  await expect(page.getByRole('button', {name: 'Dev server — Command Prompt', exact: true})).toBeVisible();
+  // Ctrl+W closes the active terminal tab.
+  await page.keyboard.press('Control+w');
+  await expect(page.getByRole('button', {name: 'Dev server — Command Prompt', exact: true})).toHaveCount(0);
+  await page.screenshot({path: info.outputPath('terminal-commands.png')});
 });
 
 test('diff text renders, can be selected, and has a working copy menu', async ({ page }, info) => {
@@ -63,10 +102,26 @@ test('settings list categories on the left and save AI credentials', async ({ pa
   await dialog.getByLabel('API Key', {exact: true}).fill('sk-test');
   await dialog.getByRole('button', {name: 'Show key', exact: true}).click();
   await expect(dialog.getByLabel('API Key', {exact: true})).toHaveAttribute('type', 'text');
+  await dialog.getByRole('button', {name: 'Fetch models', exact: true}).click();
+  await expect(dialog.getByText('2 models available', {exact: true})).toBeVisible();
+  await dialog.getByRole('combobox', {name: 'Model', exact: true}).click();
+  await page.getByRole('option', {name: 'deepseek-chat', exact: true}).click();
+  await dialog.getByLabel('Commit message prompt', {exact: true}).fill('Write in Chinese.');
+  await dialog.getByText('Show the built-in prompt', {exact: true}).click();
+  await expect(dialog.getByText('You write commit messages for a Git repository.')).toBeVisible();
   await page.screenshot({path: info.outputPath('settings-ai.png')});
   await dialog.getByRole('button', {name: 'Save', exact: true}).click();
   await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.state.Preferences.AIURL)).toBe('https://api.example.com/v1');
   expect(await page.evaluate(() => (window as any).__mygitTestBackend.state.Preferences.AIKey)).toBe('sk-test');
+  expect(await page.evaluate(() => (window as any).__mygitTestBackend.state.Preferences.AIModel)).toBe('deepseek-chat');
+  expect(await page.evaluate(() => (window as any).__mygitTestBackend.state.Preferences.AICommitPrompt)).toBe('Write in Chinese.');
+});
+
+test('writes a commit message from the staged changes', async ({ page }) => {
+  const box = page.getByRole('textbox', {name: 'Commit message', exact: true});
+  await expect(box).toBeVisible();
+  await page.getByRole('button', {name: 'Generate commit message', exact: true}).click();
+  await expect(box).toHaveValue('feat: describe the staged changes');
 });
 
 test('settings open the local data location', async ({ page }) => {

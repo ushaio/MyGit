@@ -10,6 +10,7 @@ import {
   Settings,
   ChevronRight,
   Github,
+  TerminalSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,83 +52,146 @@ export function ProjectSidebar() {
     t = useT();
   const [group, setGroup] = useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const filtered = w.projects.filter((p) =>
     `${basename(p.Path)} ${p.Path}`.toLowerCase().includes(query.toLowerCase()),
   );
   const newGroup = () => setGroup({ id: crypto.randomUUID(), name: "" });
 
   function projectRow(node: ProjectNode) {
+    const terminals = w.terminalsFor(node.Path);
+    const open = !!expanded[node.Path];
     return (
-      <ContextMenu key={node.Path}>
-        <ContextMenuTrigger asChild>
-          <button
-            type="button"
-            className="nav-row"
-            data-active={w.project === node.Path}
-            onClick={() => w.selectProject(node.Path)}
-            title={node.Path}
-          >
-            {node.Source === "github" ? <Github /> : <GitFork />}
-            <span className="truncate">{basename(node.Path)}</span>
-            {node.Pinned && (
-              <Pin className="ml-auto !size-3 text-muted-foreground" />
-            )}
-          </button>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-52">
-          <ContextMenuItem onSelect={() => report(Desktop.OpenPath(node.Path))}>
-            {t("Open folder")}
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => copy(node.Path)}>
-            {t("Copy path")}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            onSelect={() =>
-              w.update(
-                Workspace.UpdateProject(
-                  node.Path,
-                  "pinned",
-                  String(!node.Pinned),
-                ),
-              )
-            }
-          >
-            {t(node.Pinned ? "Unpin" : "Pin")}
-          </ContextMenuItem>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>{t("Move to group")}</ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              <ContextMenuItem
-                onSelect={() =>
-                  w.update(Workspace.UpdateProject(node.Path, "group", ""))
-                }
+      <div key={node.Path}>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              className="nav-row"
+              data-active={w.project === node.Path}
+              title={node.Path}
+            >
+              <button
+                type="button"
+                className="nav-project"
+                onClick={() => w.selectProject(node.Path)}
               >
-                {t("Ungrouped")}
-              </ContextMenuItem>
-              {(w.state?.Groups || []).map((g) => (
-                <ContextMenuItem
-                  key={g.ID}
-                  onSelect={() =>
-                    w.update(Workspace.UpdateProject(node.Path, "group", g.ID))
+                {node.Source === "github" ? <Github /> : <GitFork />}
+                <span className="truncate">{basename(node.Path)}</span>
+              </button>
+              {node.Pinned && (
+                <Pin className="!size-3 shrink-0 text-muted-foreground" />
+              )}
+              {!!terminals.length && (
+                <button
+                  type="button"
+                  className="nav-terminal-toggle"
+                  data-open={open}
+                  aria-expanded={open}
+                  aria-label={`${t("Show terminals")} (${terminals.length})`}
+                  title={t("Show terminals")}
+                  onClick={() =>
+                    setExpanded((old) => ({
+                      ...old,
+                      [node.Path]: !old[node.Path],
+                    }))
                   }
                 >
-                  {g.Name}
+                  <TerminalSquare />
+                  <span className="nav-terminal-count">
+                    {terminals.length}
+                  </span>
+                  <ChevronRight className="nav-terminal-caret" />
+                </button>
+              )}
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-52">
+            <ContextMenuItem onSelect={() => report(Desktop.OpenPath(node.Path))}>
+              {t("Open folder")}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => copy(node.Path)}>
+              {t("Copy path")}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void w.openTerminal(node.Path)}>
+              {t("New terminal")}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() =>
+                w.update(
+                  Workspace.UpdateProject(
+                    node.Path,
+                    "pinned",
+                    String(!node.Pinned),
+                  ),
+                )
+              }
+            >
+              {t(node.Pinned ? "Unpin" : "Pin")}
+            </ContextMenuItem>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                {t("Move to group")}
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                <ContextMenuItem
+                  onSelect={() =>
+                    w.update(Workspace.UpdateProject(node.Path, "group", ""))
+                  }
+                >
+                  {t("Ungrouped")}
                 </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            className="text-destructive"
-            onSelect={() =>
-              w.update(Workspace.UpdateProject(node.Path, "removed", "true"))
-            }
-          >
-            {t("Remove project")}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+                {(w.state?.Groups || []).map((g) => (
+                  <ContextMenuItem
+                    key={g.ID}
+                    onSelect={() =>
+                      w.update(
+                        Workspace.UpdateProject(node.Path, "group", g.ID),
+                      )
+                    }
+                  >
+                    {g.Name}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              className="text-destructive"
+              onSelect={() =>
+                w.update(Workspace.UpdateProject(node.Path, "removed", "true"))
+              }
+            >
+              {t("Remove project")}
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+        {open && !!terminals.length && (
+          <div className="terminal-list">
+            {terminals.map((tab, index) => (
+              <button
+                key={tab.id}
+                type="button"
+                className="terminal-item"
+                aria-label={`${t("Terminal")} ${index + 1} ${basename(tab.path)}`}
+                data-active={
+                  w.page === "terminal" && w.activeTerminal === tab.id
+                }
+                title={tab.path}
+                onClick={() => w.activateTerminal(tab)}
+              >
+                <TerminalSquare />
+                <span className="truncate">
+                  {t("Terminal")} {index + 1}
+                </span>
+                <span className="ml-auto truncate text-[10px] opacity-70">
+                  {basename(tab.path)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     );
   }
   function treeRow(node: ProjectNode, root = false): React.ReactNode {

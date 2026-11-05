@@ -217,6 +217,7 @@ func TestPreferencesKeepAISettings(t *testing.T) {
 	}
 	preferences := s.Snapshot().Preferences
 	preferences.AIURL, preferences.AIKey = "  https://api.example.com/v1  ", " sk-test "
+	preferences.AIModel = "  deepseek-chat "
 	if _, err := s.SetPreferences(preferences); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +226,7 @@ func TestPreferencesKeepAISettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved := loaded.Snapshot().Preferences
-	if saved.AIURL != "https://api.example.com/v1" || saved.AIKey != "sk-test" {
+	if saved.AIURL != "https://api.example.com/v1" || saved.AIKey != "sk-test" || saved.AIModel != "deepseek-chat" {
 		t.Fatalf("preferences: %+v", saved)
 	}
 	preferences.AIURL = "api.example.com"
