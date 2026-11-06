@@ -235,6 +235,63 @@ func TestPreferencesKeepAISettings(t *testing.T) {
 	}
 }
 
+func TestRememberCloseActionClearsReminder(t *testing.T) {
+	config := t.TempDir()
+	s, err := NewStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := s.Snapshot().Preferences
+	if defaults.CloseAction != "minimize" || !defaults.CloseConfirm {
+		t.Fatalf("default close preferences: %+v", defaults)
+	}
+	if _, err := s.RememberCloseAction("exit"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := NewStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := loaded.Snapshot().Preferences
+	if saved.CloseAction != "exit" || saved.CloseConfirm {
+		t.Fatalf("remembered close preferences: %+v", saved)
+	}
+	if _, err := s.RememberCloseAction("sleep"); err == nil {
+		t.Fatal("an invalid close action was accepted")
+	}
+	preferences := loaded.Snapshot().Preferences
+	preferences.CloseAction, preferences.CloseConfirm = "", true
+	if _, err := loaded.SetPreferences(preferences); err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Snapshot().Preferences.CloseAction; got != "minimize" {
+		t.Fatalf("empty close action normalised to %q", got)
+	}
+	preferences.CloseAction = "sleep"
+	if _, err := loaded.SetPreferences(preferences); err == nil {
+		t.Fatal("SetPreferences accepted an invalid close action")
+	}
+}
+
+func TestProjectOrderPersistsAndDeduplicates(t *testing.T) {
+	config := t.TempDir()
+	s, err := NewStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetProjectOrder("pinned", []string{"a", "b", "a", ""}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := NewStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded.Snapshot().ProjectOrder["pinned"]
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("project order: %+v", got)
+	}
+}
+
 func TestDataDirectoryHoldsTheWorkspaceFile(t *testing.T) {
 	config := t.TempDir()
 	s, err := NewStore(config)

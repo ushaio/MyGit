@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, it, vi } from "vitest"
 import { ThemeProvider } from "@/lib/theme"
-import { Call } from "@wailsio/runtime"
+import { Call, Events } from "@wailsio/runtime"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { WorkbenchProvider } from "@/lib/workbench"
@@ -25,15 +25,15 @@ it("badges projects with open terminals and expands their terminal list", async 
   expect(toggle).toHaveAttribute("aria-expanded", "false")
   await user.click(toggle)
   expect(toggle).toHaveAttribute("aria-expanded", "true")
-  await screen.findByRole("button", { name: "Terminal 1 alpha" })
+  await screen.findByRole("button", { name: "Terminal: alpha" })
 
   fireEvent.contextMenu(alphaRow, { button: 2, clientX: 120, clientY: 120 })
   await user.click(await screen.findByRole("menuitem", { name: "New terminal" }))
   await waitFor(() => expect(backend.terminals).toEqual([alpha, alpha]))
   expect(await screen.findByRole("button", { name: "Show terminals (2)" })).toBeInTheDocument()
-  await screen.findByRole("button", { name: "Terminal 2 alpha" })
-  await user.click(screen.getByRole("button", { name: "Terminal 1 alpha" }))
-  await waitFor(() => expect(screen.getByRole("button", { name: "Terminal 1 alpha" })).toHaveAttribute("data-active", "true"))
+  await screen.findByRole("button", { name: "Terminal: alpha 2" })
+  await user.click(screen.getByRole("button", { name: "Terminal: alpha" }))
+  await waitFor(() => expect(screen.getByRole("button", { name: "Terminal: alpha" })).toHaveAttribute("data-active", "true"))
 })
 it("loads a repository and stages actual selected files", async () => {
   const user = await ready()
@@ -133,6 +133,21 @@ it("keeps AI settings in a sectioned settings dialog", async () => {
   expect(backend.state.Preferences.AIModel).toBe("deepseek-chat")
   expect(backend.state.Preferences.AICommitPrompt).toBe("Write in Chinese.")
 })
+it("saves the default view from the general settings", async () => {
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: "Settings" }))
+  const dialog = await screen.findByRole("dialog")
+  expect(within(dialog).getByRole("combobox", { name: "Default view" })).toHaveTextContent("Git")
+  await user.click(within(dialog).getByRole("combobox", { name: "Default view" }))
+  await user.click(await screen.findByRole("option", { name: "Terminal" }))
+  await user.click(within(dialog).getByRole("button", { name: "Save" }))
+  await waitFor(() => expect(backend.state.Preferences.DefaultView).toBe("terminal"))
+})
+it("opens a terminal on launch when the terminal view is the default", async () => {
+  backend.state.Preferences.DefaultView = "terminal"
+  await ready()
+  await waitFor(() => expect(backend.terminals).toEqual([alpha]))
+})
 it("opens the data location from the folders section", async () => {
   const user = await ready()
   await user.click(screen.getByRole("button", { name: "Settings" }))
@@ -143,4 +158,106 @@ it("opens the data location from the folders section", async () => {
   expect(within(dialog).getByText("C:/Users/test/.mygit-wails3")).toBeInTheDocument()
   await user.click(open)
   await waitFor(() => expect(backend.opened).toEqual(["C:/Users/test/.mygit-wails3"]))
+})
+it("checks for updates before offering the download", async () => {
+  backend.checkUpdateResult.Available = true
+  backend.checkUpdateResult.Latest = "0.3.0"
+  backend.checkUpdateResult.URL = "https://github.com/ushaio/MyGit/releases/tag/v0.3.0"
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: "Settings" }))
+  const dialog = await screen.findByRole("dialog")
+  await user.click(within(dialog).getByRole("button", { name: "About" }))
+  expect(within(dialog).getAllByText("v0.2.0").length).toBeGreaterThan(0)
+  expect(
+    within(dialog).getByText("A worktree-centered desktop Git client."),
+  ).toBeInTheDocument()
+  await user.click(
+    within(dialog).getByRole("button", { name: "Check for updates" }),
+  )
+  await waitFor(() =>
+    expect(within(dialog).getByText("A new version is available:")).toBeInTheDocument(),
+  )
+  expect(within(dialog).getByText("v0.3.0")).toBeInTheDocument()
+  await user.click(within(dialog).getByRole("button", { name: "Download and install" }))
+  await waitFor(() => expect(backend.downloaded).toBe(1))
+  await waitFor(() =>
+    expect(backend.installed).toEqual(["C:/Temp/MyGit-update/MyGit-amd64-installer.exe"]),
+  )
+  expect(backend.openedUrls).toEqual([])
+})
+it("reports when there is no newer version", async () => {
+  backend.checkUpdateResult.Available = false
+  backend.checkUpdateResult.Latest = "0.2.0"
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: "Settings" }))
+  const dialog = await screen.findByRole("dialog")
+  await user.click(within(dialog).getByRole("button", { name: "About" }))
+  await user.click(
+    within(dialog).getByRole("button", { name: "Check for updates" }),
+  )
+  await waitFor(() =>
+    expect(
+      within(dialog).getByText(/You're running the latest version\./),
+    ).toBeInTheDocument(),
+  )
+  expect(
+    within(dialog).queryByRole("button", { name: "Download and install" }),
+  ).not.toBeInTheDocument()
+})
+it("shows a floating update prompt on launch and installs in place", async () => {
+  backend.checkUpdateResult.Available = true
+  backend.checkUpdateResult.Latest = "0.3.0"
+  const user = await ready()
+  const prompt = await screen.findByRole("status", { name: "Software update" })
+  expect(within(prompt).getByText("v0.3.0")).toBeInTheDocument()
+  await user.click(
+    within(prompt).getByRole("button", { name: "Download and install" }),
+  )
+  await waitFor(() => expect(backend.downloaded).toBe(1))
+  await waitFor(() =>
+    expect(backend.installed).toEqual([
+      "C:/Temp/MyGit-update/MyGit-amd64-installer.exe",
+    ]),
+  )
+  expect(backend.openedUrls).toEqual([])
+})
+it("reorders grouped projects by drag and drop and keeps the order", async () => {
+  backend.state.Groups = [{ ID: "g1", Name: "Group one" }]
+  for (const child of backend.state.Trees?.[0]?.Children || []) {
+    if (child) { child.Group = "g1"; child.Pinned = false }
+  }
+  await ready()
+  const row = (name: string) => screen.getAllByRole("button", { name }).find((el) => el.classList.contains("nav-project"))!
+  fireEvent.dragStart(row("beta"))
+  fireEvent.dragOver(row("alpha"))
+  fireEvent.drop(row("alpha"))
+  await waitFor(() => expect(backend.state.ProjectOrder?.g1).toEqual(["C:/Projects/beta", "C:/Projects/alpha"]))
+  // The rendered order follows the saved order.
+  const labels = screen.getAllByRole("button").filter((el) => el.classList.contains("nav-project")).map((el) => el.textContent)
+  expect(labels).toEqual(["beta", "alpha"])
+})
+it("asks what closing should do and remembers the choice", async () => {
+  const listeners: Record<string, () => void> = {}
+  vi.mocked(Events.On).mockImplementation(((name: string, callback: () => void) => { listeners[name] = callback; return () => {} }) as typeof Events.On)
+  mount()
+  await screen.findByRole("button", { name: "Stage all" })
+  const user = userEvent.setup()
+  await act(async () => { listeners["app:close-request"]?.() })
+  const dialog = await screen.findByRole("dialog")
+  await user.click(within(dialog).getByRole("checkbox", { name: "Remember my choice" }))
+  await user.click(within(dialog).getByRole("button", { name: "Quit app" }))
+  await waitFor(() => expect(Call.ByName).toHaveBeenCalledWith("mygit-wails3/internal/services.AppService.ResolveClose", "exit", true))
+  await waitFor(() => expect(backend.state.Preferences.CloseAction).toBe("exit"))
+  expect(backend.state.Preferences.CloseConfirm).toBe(false)
+})
+it("re-enables the quit reminder from settings", async () => {
+  backend.state.Preferences.CloseConfirm = false
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: "Settings" }))
+  const dialog = await screen.findByRole("dialog")
+  const checkbox = within(dialog).getByRole("checkbox", { name: "Quit reminder" })
+  expect(checkbox).not.toBeChecked()
+  await user.click(checkbox)
+  await user.click(within(dialog).getByRole("button", { name: "Save" }))
+  await waitFor(() => expect(backend.state.Preferences.CloseConfirm).toBe(true))
 })

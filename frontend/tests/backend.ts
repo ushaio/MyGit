@@ -4,9 +4,12 @@ export const alpha = "C:/Projects/alpha", beta = "C:/Projects/beta", linked = "C
 function node(Path: string, Repository = false, Children: ProjectNode[] = []): ProjectNode { return { Path, Repository, Children, Bare: false, Open: true, Missing: false, Pinned: Path === alpha, Removed: false, Group: "", Root: !Repository, Icon: "", Source: "github" } }
 export function commit(Hash = "a".repeat(40), Subject = "Initial commit", Parents: string[] = []): Commit { return { Hash, Short: Hash.slice(0, 8), Parents, Refs: ["HEAD -> main"], Author: "Test Author", AuthorEmail: "test@example.com", Committer: "Test Author", CommitterEmail: "test@example.com", AuthorDate: "2026-01-01T00:00:00Z", CommitDate: "2026-01-01T00:00:00Z", CoAuthors: [], Subject, Body: "Commit description" } }
 export function createBackend() {
-  const state: WorkspaceState = { Version: 1, Roots: ["C:/Projects"], Trees: [node("C:/Projects", false, [node(alpha, true), node(beta, true)])], Groups: [], Selected: alpha, Worktrees: {}, Drafts: {}, PinnedRefs: {}, AutoFetch: {}, Preferences: { Theme: "light", Language: "en", Editor: "", Wrap: true, SidebarWidth: 232, AIURL: "", AIKey: "", AIModel: "", AICommitPrompt: "" } }
+  const state: WorkspaceState = { Version: 1, Roots: ["C:/Projects"], Trees: [node("C:/Projects", false, [node(alpha, true), node(beta, true)])], Groups: [], Selected: alpha, Worktrees: {}, Drafts: {}, PinnedRefs: {}, AutoFetch: {}, ProjectOrder: {}, Preferences: { Theme: "light", Language: "en", Editor: "", Wrap: true, SidebarWidth: 232, DefaultView: "git", AIURL: "", AIKey: "", AIModel: "", AICommitPrompt: "", CloseAction: "minimize", CloseConfirm: true } }
   const file = { Path: "src/main.go", OldPath: "src/main.go", Status: 77, Added: 1, Deleted: 1, Area: 2, Commit: "" }
-  const writes: Action[] = [], copied: string[] = [], selections: string[][] = [], opened: string[] = []
+  const writes: Action[] = [], copied: string[] = [], selections: string[][] = [], opened: string[] = [], openedUrls: string[] = []
+  const checkUpdateResult = { Current: "0.2.0", Latest: "0.2.0", Available: false, URL: "https://github.com/ushaio/MyGit/releases/tag/v0.2.0", Name: "v0.2.0", PublishedAt: "2026-02-01T00:00:00Z", AssetName: "MyGit-amd64-installer.exe", AssetURL: "https://github.com/ushaio/MyGit/releases/download/v0.2.0/MyGit-amd64-installer.exe", AssetSize: 12345678 }
+  let downloaded = 0
+  const installed: string[] = []
   const terminals: string[] = [], closedTerminals: string[] = [], terminalShells: string[] = [], terminalWrites: string[] = []
   let terminalCommands: Record<string, TerminalCommand[]> = {}
   function snapshot(path: string): Repository { return { Path: path, Bare: false, Changes: { Top: path, From: "a".repeat(40), To: "", Files: path === beta ? [] : [{ ...file }] }, Refs: { Branches: [{ Name: "main", Hash: "a".repeat(40), Upstream: { Remote: "origin", Branch: "main" }, Ahead: 0, Behind: 0 }], Remotes: [], Tags: [] }, Tracking: { Branch: path === linked ? "feature" : "main", Upstream: "origin/main", Ahead: 0, Behind: 0 }, Worktrees: [{ Path: alpha, Branch: "main", HEAD: "a".repeat(40), Main: true, Bare: false, Detached: false, Locked: false, Prunable: false }, { Path: linked, Branch: "feature", HEAD: "b".repeat(40), Main: false, Bare: false, Detached: false, Locked: false, Prunable: false }], Stashes: [], Remotes: { origin: "https://github.com/example/alpha.git" }, Operation: { Kind: 0 } } }
@@ -16,6 +19,7 @@ export function createBackend() {
     switch (method) {
       case "State": case "Refresh": return structuredClone(state)
       case "Select": state.Selected = args[0] as string; if (args[1]) state.Worktrees![args[0] as string] = args[1] as string; selections.push(args as string[]); return structuredClone(state)
+      case "SetProjectOrder": state.ProjectOrder![args[0] as string] = [...(args[1] as string[])]; return structuredClone(state)
       case "Snapshot": return snapshot(args[0] as string)
       case "Changes": return snapshot((args[0] as { Path: string }).Path).Changes
       case "File": return content(args[0] as FileRequest)
@@ -24,6 +28,13 @@ export function createBackend() {
       case "CopyText": copied.push(args[0] as string); return
       case "SaveDraft": state.Drafts![args[0] as string] = args[1] as string; return
       case "SetPreferences": state.Preferences = args[0] as WorkspaceState["Preferences"]; return structuredClone(state)
+      case "ResolveClose": {
+        if (args[1]) {
+          state.Preferences.CloseAction = args[0] as string
+          state.Preferences.CloseConfirm = false
+        }
+        return structuredClone(state)
+      }
       case "DataPath": return "C:/Users/test/.mygit-wails3"
       case "Models": return [{ ID: "deepseek-chat", Owner: "deepseek" }, { ID: "gpt-4o-mini", Owner: "openai" }]
       case "DefaultCommitPrompt": return "You write commit messages for a Git repository."
@@ -50,9 +61,13 @@ export function createBackend() {
       case "Close": closedTerminals.push(args[0] as string); return
       case "RebasePlan": return [commit()]
       case "OpenPath": opened.push(args[0] as string); return
-      case "Reveal": case "SaveText": case "OpenURL": return
+      case "OpenURL": openedUrls.push(args[0] as string); return
+      case "CheckUpdate": return { ...checkUpdateResult }
+      case "DownloadUpdate": downloaded += 1; return "C:/Temp/MyGit-update/MyGit-amd64-installer.exe"
+      case "InstallUpdate": installed.push(args[0] as string); return
+      case "Reveal": case "SaveText": return
       default: throw new Error(`Unhandled test call ${name}`)
     }
   }
-  return { state, call, writes, copied, selections, opened, terminals, closedTerminals, terminalShells, terminalWrites, get terminalCommands() { return terminalCommands[alpha] || [] }, snapshot, content }
+  return { state, call, writes, copied, selections, opened, openedUrls, checkUpdateResult, get downloaded() { return downloaded }, installed, terminals, closedTerminals, terminalShells, terminalWrites, get terminalCommands() { return terminalCommands[alpha] || [] }, snapshot, content }
 }

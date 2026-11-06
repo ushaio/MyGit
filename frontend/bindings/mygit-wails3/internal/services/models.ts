@@ -142,3 +142,20 @@ export interface TerminalProfile {
     "Available": boolean;
     "Default": boolean;
 }
+
+/**
+ * UpdateInfo compares the running version with the latest GitHub release. The
+ * Asset* fields point at the installer that matches this build's platform, so
+ * the UI can download it in place instead of sending the user to GitHub.
+ */
+export interface UpdateInfo {
+    "Current": string;
+    "Latest": string;
+    "Available": boolean;
+    "URL": string;
+    "Name": string;
+    "PublishedAt": string;
+    "AssetName": string;
+    "AssetURL": string;
+    "AssetSize": number;
+}

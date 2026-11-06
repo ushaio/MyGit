@@ -26,6 +26,8 @@ import { basename, cn } from "@/lib/utils";
 import { LanguageProvider, useT } from "@/lib/i18n";
 import { report, useWorkbench } from "@/lib/workbench";
 import { ProjectPalette, ProjectSidebar } from "@/components/projects";
+import { CloseConfirmDialog } from "@/components/close-confirm";
+import { UpdatePrompt } from "@/components/update-prompt";
 import { RefsSidebar, type ViewSelection } from "@/components/refs";
 import { HistoryView } from "@/components/history";
 import { FileBrowser } from "@/components/files";
@@ -300,6 +302,8 @@ function WorkspaceWindow() {
         )}
       </footer>
       <ProjectPalette />
+      <CloseConfirmDialog />
+      <UpdatePrompt />
       {w.pending && <Suspense fallback={null}><ActionDialog /></Suspense>}
       {w.settings && <Suspense fallback={null}><SettingsDialog /></Suspense>}
     </div>

@@ -48,6 +48,7 @@ Run from repo root. `task` (go-task 3.54) wraps everything; `GOWORK=off` is set 
 - Generated Go bindings are what the TS types come from; field names are PascalCase on both sides (`Action.Path`, `Repository.Changes`).
 - Error messages are surfaced to users via sonner toasts; wrap failures with context rather than returning bare `exec` errors.
 - Tests: Go tests use real temp repos (`git init` in `t.TempDir()`), so they exercise the real CLI — keep them hermetic and fast. Vitest has `restoreMocks: true` and a 10s timeout.
+- **变更日志**：`CHANGELOG.md`（Keep a Changelog 格式）记录所有历史版本与当前未发布变更。任何功能（feature）、修复（fix）、重构或破坏性变更，都要在该文件顶部的「未发布」区块按 `新增 / 变更 / 修复 / 移除 / 安全` 归类登记；发布时把「未发布」提升为对应版本号并补发布日期。
 
 ## 只读请求
 

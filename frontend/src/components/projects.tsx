@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Folder,
   FolderOpen,
@@ -46,6 +46,24 @@ import { basename } from "@/lib/utils";
 import { copy, report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
 import { IconButton, Section } from "./shared";
+import { ShellIcon } from "./shell-icon";
+
+// orderProjects applies the manual drag order saved for one sidebar section.
+// Projects that were never ranked keep their incoming (alphabetical) order and
+// follow the ranked ones, so a newly added project lands at the end.
+function orderProjects(
+  list: ProjectNode[],
+  scope: string,
+  order: Record<string, string[] | null | undefined> | null | undefined,
+): ProjectNode[] {
+  const sequence = order?.[scope];
+  if (!sequence || !sequence.length) return list;
+  const rank = new Map(sequence.map((path, index) => [path, index] as const));
+  const ranked = list
+    .filter((node) => rank.has(node.Path))
+    .sort((a, b) => rank.get(a.Path)! - rank.get(b.Path)!);
+  return [...ranked, ...list.filter((node) => !rank.has(node.Path))];
+}
 
 export function ProjectSidebar() {
   const w = useWorkbench(),
@@ -53,16 +71,81 @@ export function ProjectSidebar() {
   const [group, setGroup] = useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [dragPath, setDragPath] = useState("");
+  const [dropPath, setDropPath] = useState("");
+  const dragSource = useRef<{ path: string; scope: string } | null>(null);
   const filtered = w.projects.filter((p) =>
     `${basename(p.Path)} ${p.Path}`.toLowerCase().includes(query.toLowerCase()),
   );
+  const pinnedProjects = orderProjects(
+    w.projects.filter((p) => p.Pinned),
+    "pinned",
+    w.state?.ProjectOrder,
+  );
   const newGroup = () => setGroup({ id: crypto.randomUUID(), name: "" });
 
-  function projectRow(node: ProjectNode) {
+  function clearDrag() {
+    dragSource.current = null;
+    setDragPath("");
+    setDropPath("");
+  }
+  function dropOn(scope: string, paths: string[], target: string) {
+    const source = dragSource.current;
+    clearDrag();
+    if (!source || source.scope !== scope || source.path === target) return;
+    const from = paths.indexOf(source.path);
+    const to = paths.indexOf(target);
+    if (from < 0 || to < 0) return;
+    const next = [...paths];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    void w.update(Workspace.SetProjectOrder(scope, next));
+  }
+
+  function projectRow(
+    node: ProjectNode,
+    reorder?: { scope: string; paths: string[] },
+  ) {
     const terminals = w.terminalsFor(node.Path);
     const open = !!expanded[node.Path];
+    const dragProps = reorder
+      ? {
+          draggable: true,
+          onDragStart: (event: React.DragEvent) => {
+            dragSource.current = { path: node.Path, scope: reorder.scope };
+            setDragPath(node.Path);
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+          },
+          onDragEnd: clearDrag,
+          onDragOver: (event: React.DragEvent) => {
+            const source = dragSource.current;
+            if (
+              !source ||
+              source.scope !== reorder.scope ||
+              source.path === node.Path
+            )
+              return;
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+            setDropPath(node.Path);
+          },
+          onDragLeave: () =>
+            setDropPath((current) => (current === node.Path ? "" : current)),
+          onDrop: (event: React.DragEvent) => {
+            event.preventDefault();
+            dropOn(reorder.scope, reorder.paths, node.Path);
+          },
+        }
+      : {};
     return (
-      <div key={node.Path}>
+      <div
+        key={node.Path}
+        className="nav-row-wrap"
+        data-draggable={reorder ? "true" : undefined}
+        data-dragging={dragPath === node.Path ? "true" : undefined}
+        data-drop={dropPath === node.Path ? "true" : undefined}
+        {...dragProps}
+      >
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <div
@@ -168,25 +251,25 @@ export function ProjectSidebar() {
         </ContextMenu>
         {open && !!terminals.length && (
           <div className="terminal-list">
-            {terminals.map((tab, index) => (
+            {terminals.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 className="terminal-item"
-                aria-label={`${t("Terminal")} ${index + 1} ${basename(tab.path)}`}
+                aria-label={`${t("Terminal")}: ${tab.label}`}
                 data-active={
                   w.page === "terminal" && w.activeTerminal === tab.id
                 }
                 title={tab.path}
                 onClick={() => w.activateTerminal(tab)}
               >
-                <TerminalSquare />
-                <span className="truncate">
-                  {t("Terminal")} {index + 1}
-                </span>
-                <span className="ml-auto truncate text-[10px] opacity-70">
-                  {basename(tab.path)}
-                </span>
+                <ShellIcon profile={tab.profile} shell={tab.shell} />
+                <span className="truncate">{tab.label}</span>
+                {basename(tab.path) !== tab.label && (
+                  <span className="ml-auto truncate text-[10px] opacity-70">
+                    {basename(tab.path)}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -285,39 +368,42 @@ export function ProjectSidebar() {
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {query ? (
-          <>{filtered.map(projectRow)}</>
+          <>{filtered.map((p) => projectRow(p))}</>
         ) : (
           <>
-            <Section
-              title="Pinned"
-              count={w.projects.filter((p) => p.Pinned).length}
-            >
-              {w.projects.filter((p) => p.Pinned).map(projectRow)}
+            <Section title="Pinned" count={pinnedProjects.length}>
+              {pinnedProjects.map((p) =>
+                projectRow(p, {
+                  scope: "pinned",
+                  paths: pinnedProjects.map((node) => node.Path),
+                }),
+              )}
             </Section>
             <Section
               title="Repositories"
               count={w.projects.length}
               defaultOpen={false}
             >
-              {w.projects.map(projectRow)}
+              {w.projects.map((p) => projectRow(p))}
             </Section>
-            {(w.state?.Groups || []).map((g) => (
-              <ContextMenu key={g.ID}>
-                <ContextMenuTrigger asChild>
-                  <div>
-                    <Section
-                      title={g.Name}
-                      count={
-                        w.projects.filter((p) => p.Group === g.ID && !p.Pinned)
-                          .length
-                      }
-                    >
-                      {w.projects
-                        .filter((p) => p.Group === g.ID && !p.Pinned)
-                        .map(projectRow)}
-                    </Section>
-                  </div>
-                </ContextMenuTrigger>
+            {(w.state?.Groups || []).map((g) => {
+              const members = orderProjects(
+                w.projects.filter((p) => p.Group === g.ID && !p.Pinned),
+                g.ID,
+                w.state?.ProjectOrder,
+              );
+              const paths = members.map((node) => node.Path);
+              return (
+                <ContextMenu key={g.ID}>
+                  <ContextMenuTrigger asChild>
+                    <div>
+                      <Section title={g.Name} count={members.length}>
+                        {members.map((p) =>
+                          projectRow(p, { scope: g.ID, paths }),
+                        )}
+                      </Section>
+                    </div>
+                  </ContextMenuTrigger>
                 <ContextMenuContent>
                   <ContextMenuItem onSelect={newGroup}>
                     {t("New group")}
@@ -332,9 +418,10 @@ export function ProjectSidebar() {
                   >
                     {t("Delete group")}
                   </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
-            ))}
+                  </ContextMenuContent>
+                </ContextMenu>
+              );
+            })}
             <Section
               title="Ungrouped projects"
               action={

@@ -53,6 +53,10 @@ export function SetPreferences(p: workspace$0.Preferences): $CancellablePromise<
     return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.SetPreferences", p);
 }
 
+export function SetProjectOrder(scope: string, paths: string[] | null): $CancellablePromise<workspace$0.State> {
+    return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.SetProjectOrder", scope, paths);
+}
+
 export function State(): $CancellablePromise<workspace$0.State> {
     return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.State");
 }

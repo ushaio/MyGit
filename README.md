@@ -33,6 +33,22 @@
 | 🤖 **AI 提交信息** | 拉取 OpenAI 兼容端点的模型列表，按暂存 diff 生成提交信息 |
 | 🌗 **双语 + 主题** | 中英双语（默认 `zh-CN`），支持明暗主题 |
 
+## 📸 界面截图
+
+<p align="center">
+  <img src="assets/PixPin_2026-11-06_10-16-07.png" alt="提交历史与引用" width="90%" />
+  <br />
+  <sub>提交历史与引用：图形化的提交历史、分支与远端引用一览</sub>
+</p>
+
+<p align="center">
+  <img src="assets/PixPin_2026-11-06_10-17-00.png" alt="工作区变更与提交" width="44%" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="assets/PixPin_2026-11-06_10-16-45.png" alt="内置终端与快捷命令" width="44%" />
+  <br />
+  <sub>左侧：工作区变更与提交　·　右侧：内置终端与快捷命令</sub>
+</p>
+
 ## 🧱 技术栈
 
 | 层 | 技术 |

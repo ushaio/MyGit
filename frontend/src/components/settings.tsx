@@ -8,15 +8,21 @@ import {
 } from "react";
 import {
   Code2,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
   Folder,
   FolderOpen,
+  GitBranch,
+  Github,
+  Info,
   Loader2,
+  MessageSquare,
   Palette,
   Plus,
   RefreshCw,
+  Scale,
   Sparkles,
   X,
 } from "lucide-react";
@@ -39,9 +45,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AI, Desktop, Workspace, type AIModel, type Preferences } from "@/lib/api";
+import {
+  AI,
+  Desktop,
+  Workspace,
+  type AIModel,
+  type Preferences,
+} from "@/lib/api";
+import {
+  APP_ISSUES,
+  APP_LICENSE_URL,
+  APP_NAME,
+  APP_REPOSITORY,
+  APP_VERSION,
+} from "@/lib/app-info";
 import { report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
+import { checkForUpdates, startUpdate, useUpdate } from "@/lib/update";
 import { errorMessage } from "@/lib/utils";
 import { IconButton } from "./shared";
 
@@ -54,6 +74,7 @@ const sections: {
   { id: "editor", label: "Editor", icon: Code2 },
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "folders", label: "Folders", icon: Folder },
+  { id: "about", label: "About", icon: Info },
 ];
 
 function Field({
@@ -97,6 +118,7 @@ export function SettingsDialog() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState("");
   const [defaultPrompt, setDefaultPrompt] = useState("");
+  const update = useUpdate();
   const loadingRef = useRef(false);
   const stampRef = useRef("");
   useEffect(() => {
@@ -181,9 +203,10 @@ export function SettingsDialog() {
     key: keyof Preferences,
     label: string,
     options: [string, string][],
+    hint?: string,
   ) {
     return (
-      <Field label={t(label)}>
+      <Field label={t(label)} hint={hint ? t(hint) : undefined}>
         <Select
           value={String(preferences![key] || "none")}
           onValueChange={(value) =>
@@ -477,6 +500,171 @@ export function SettingsDialog() {
             </div>
           </div>
         );
+      case "about":
+        return (
+          <div className="grid gap-4 text-xs">
+            <div className="flex items-center gap-3">
+              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <GitBranch className="size-7" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">{APP_NAME}</span>
+                  <span className="rounded-full border px-1.5 py-px text-[10px] text-muted-foreground">
+                    v{APP_VERSION}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {t("A worktree-centered desktop Git client.")}
+                </p>
+              </div>
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {t(
+                "Manage several repositories and all of their worktrees in one window: browse history and refs, review diffs and blame, run Git operations, and keep multi-tab terminals side by side.",
+              )}
+            </p>
+            <div className="grid gap-2 border-t pt-3">
+              <Button
+                type="button"
+                className="w-full"
+                disabled={update.checking}
+                onClick={() => void checkForUpdates(false)}
+              >
+                {update.checking ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                {update.checking
+                  ? t("Checking for updates…")
+                  : t("Check for updates")}
+              </Button>
+              {update.info &&
+                (update.manual || update.info.Available) && (
+                <div
+                  role="status"
+                  className="grid gap-2 rounded-md border bg-muted/30 px-3 py-2 text-[11px]"
+                >
+                  {update.info.Available ? (
+                    <>
+                      <span>
+                        {t("A new version is available:")}{" "}
+                        <span className="select-text font-medium">
+                          v{update.info.Latest}
+                        </span>
+                      </span>
+                      {update.phase === "downloading" && (
+                        <div
+                          role="progressbar"
+                          aria-label={t("Downloading update…")}
+                          aria-valuenow={update.percent}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          className="h-1.5 overflow-hidden rounded-full bg-muted"
+                        >
+                          <div
+                            className="h-full bg-primary transition-[width] duration-200"
+                            style={{ width: `${Math.max(update.percent, 2)}%` }}
+                          />
+                        </div>
+                      )}
+                      {update.phase === "installing" && (
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          <Loader2 className="size-3 animate-spin" />
+                          {t("MyGit will restart to finish installing.")}
+                        </span>
+                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full"
+                        disabled={
+                          update.phase === "downloading" ||
+                          update.phase === "installing"
+                        }
+                        onClick={() => void startUpdate()}
+                      >
+                        {update.phase === "downloading" ||
+                        update.phase === "installing" ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Download className="size-4" />
+                        )}
+                        {update.phase === "downloading"
+                          ? `${t("Downloading update…")}${update.percent > 0 ? ` ${update.percent}%` : ""}`
+                          : update.phase === "installing"
+                            ? t("Starting the installer…")
+                            : update.phase === "error"
+                              ? t("Retry")
+                              : t("Download and install")}
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {t("You're running the latest version.")}{" "}
+                      <span className="select-text">
+                        v{update.info.Current || APP_VERSION}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              )}
+              {update.error && (
+                <span role="alert" className="text-[11px] text-destructive">
+                  {update.error}
+                </span>
+              )}
+              <span className="text-center text-[10px] text-muted-foreground">
+                {t("The update downloads and installs inside MyGit.")}
+              </span>
+              <div className="grid gap-1 pt-1">
+                <button
+                  type="button"
+                  className="nav-row text-xs"
+                  aria-label={t("Project homepage")}
+                  onClick={() => report(Desktop.OpenURL(APP_REPOSITORY))}
+                >
+                  <Github />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {t("Project homepage")}
+                  </span>
+                  <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                </button>
+                <button
+                  type="button"
+                  className="nav-row text-xs"
+                  aria-label={t("Report an issue")}
+                  onClick={() => report(Desktop.OpenURL(APP_ISSUES))}
+                >
+                  <MessageSquare />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {t("Report an issue")}
+                  </span>
+                  <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                </button>
+                <button
+                  type="button"
+                  className="nav-row text-xs"
+                  aria-label={t("MIT License")}
+                  onClick={() => report(Desktop.OpenURL(APP_LICENSE_URL))}
+                >
+                  <Scale />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {t("MIT License")}
+                  </span>
+                  <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                </button>
+              </div>
+              <span className="select-text break-all px-1 text-[10px] text-muted-foreground">
+                {APP_REPOSITORY}
+              </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              {t("Copyright 2026 MyGit contributors.")}
+            </p>
+          </div>
+        );
       default:
         return (
           <div className="grid gap-5">
@@ -489,19 +677,44 @@ export function SettingsDialog() {
               ["zh-CN", "简体中文"],
               ["en", "English"],
             ])}
+            {select(
+              "DefaultView",
+              "Default view",
+              [
+                ["git", "Git"],
+                ["terminal", "Terminal"],
+              ],
+              "Choose which tab MyGit opens with.",
+            )}
+            <label className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+              <Checkbox
+                className="mt-0.5"
+                aria-label={t("Quit reminder")}
+                checked={preferences!.CloseConfirm}
+                onCheckedChange={(value) =>
+                  setPreferences((p) => p && { ...p, CloseConfirm: value === true })
+                }
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{t("Quit reminder")}</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  {t("Ask what to do when closing the window.")}
+                </span>
+              </span>
+            </label>
           </div>
         );
     }
   }
   return (
     <Dialog open={w.settings} onOpenChange={w.setSettings}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="grid-rows-[auto_minmax(0,1fr)] h-[34rem] max-h-[calc(100vh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>{t("Settings")}</DialogTitle>
           <DialogDescription>MyGit</DialogDescription>
         </DialogHeader>
         <form
-          className="flex min-h-0 flex-col"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={async (e) => {
             e.preventDefault();
             if (addressError) return setSection("ai");
@@ -514,10 +727,10 @@ export function SettingsDialog() {
             }
           }}
         >
-          <div className="flex min-h-[340px] min-w-0">
+          <div className="flex min-h-0 min-w-0 flex-1">
             <nav
               aria-label={t("Settings")}
-              className="flex w-40 shrink-0 flex-col gap-1 border-r bg-muted/30 p-2 text-xs"
+              className="flex w-40 shrink-0 flex-col gap-1 overflow-y-auto border-r bg-muted/30 p-2 text-xs"
             >
               {sections.map(({ id, label, icon: Icon }) => (
                 <button

@@ -6,7 +6,7 @@ info:
   productIdentifier: app.mygit.desktop
   description: A worktree-centered Git workspace
   copyright: Copyright 2026 MyGit contributors
-  version: 0.1.0
+  version: 0.2.0
 
 dev_mode:
   root_path: .

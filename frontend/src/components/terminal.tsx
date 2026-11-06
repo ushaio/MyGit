@@ -3,17 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { useTheme } from "@/lib/theme";
-import {
-  GitBranch,
-  Monitor,
-  Plus,
-  Shell,
-  SquareChevronRight,
-  SquareTerminal,
-  Terminal as TerminalIcon,
-  TerminalSquare,
-  X,
-} from "lucide-react";
+import { Plus, TerminalSquare, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +33,7 @@ import { cn, errorMessage } from "@/lib/utils";
 import { report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
 import { IconButton } from "./shared";
+import { ShellIcon } from "./shell-icon";
 
 export function TerminalPane({ visible }: { visible: boolean }) {
   const w = useWorkbench(),
@@ -216,28 +207,6 @@ export function TerminalPane({ visible }: { visible: boolean }) {
       />
     </section>
   );
-}
-
-const SHELL_ICONS: Record<string, typeof TerminalSquare> = {
-  powershell: SquareChevronRight,
-  "windows powershell": SquareChevronRight,
-  pwsh: SquareChevronRight,
-  "powershell 7": SquareChevronRight,
-  gitbash: GitBranch,
-  "git bash": GitBranch,
-  wsl: Monitor,
-  cmd: SquareTerminal,
-  "command prompt": SquareTerminal,
-  bash: TerminalIcon,
-  zsh: Shell,
-};
-
-function ShellIcon({ profile, shell }: { profile: string; shell: string }) {
-  const Icon =
-    SHELL_ICONS[(profile || "").toLowerCase()] ||
-    SHELL_ICONS[(shell || "").toLowerCase()] ||
-    TerminalSquare;
-  return <Icon className="size-3.5 shrink-0" aria-hidden />;
 }
 
 function shellLabel(profiles: TerminalProfile[] | null, id: string) {

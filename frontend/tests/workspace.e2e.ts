@@ -5,7 +5,7 @@ import { createBackend } from '/tests/backend.ts';
 const backend = createBackend();
 window.__mygitTestBackend = backend;
 const proxy = (name) => new Proxy({}, {get: (_, method) => (...args) => backend.call(name+'.'+String(method), ...args)});
-export const Workspace = proxy('WorkspaceService'), Git = proxy('RepositoryService'), Desktop = proxy('DesktopService'), Term = proxy('TerminalService'), AI = proxy('AIService');
+export const Workspace = proxy('WorkspaceService'), Git = proxy('RepositoryService'), Desktop = proxy('DesktopService'), Term = proxy('TerminalService'), AI = proxy('AIService'), Lifecycle = proxy('AppService');
 export function action(Kind, Path, values={}) {return {Kind,Path,Ref:'',Name:'',Value:'',Message:'',Remote:'',Files:[],Area:0,Confirm:false,Force:false,Keep:true,Untracked:true,NoCommit:false,Rebase:false,Autostash:false,UpdateRefs:false,Track:false,Tags:false,Parent:0,Mode:'',Plan:[],...values}}
 export function changeRequest(Path,Mode='changes',Revision='',extra={}) {return {Path,Mode,Revision,From:'',To:'',File:'',...extra}}
 `;
@@ -23,7 +23,7 @@ test('terminal badge on the project row expands its terminal list', async ({ pag
   const toggle = page.getByRole('button', { name: 'Show terminals (1)', exact: true });
   await expect(toggle).toBeVisible();
   await toggle.click();
-  await expect(page.getByRole('button', { name: 'Terminal 1 alpha', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Terminal: alpha', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Git', exact: true }).click();
   await page.screenshot({ path: info.outputPath('terminal-badge.png') });
 });
@@ -131,4 +131,17 @@ test('settings open the local data location', async ({ page }) => {
   await expect(dialog.getByText('C:/Users/test/.mygit-wails3', {exact: true})).toBeVisible();
   await dialog.getByRole('button', {name: 'Open data location', exact: true}).click();
   await expect.poll(() => page.evaluate(() => (window as any).__mygitTestBackend.opened)).toEqual(['C:/Users/test/.mygit-wails3']);
+});
+
+test('settings dialog keeps a fixed height when switching sections', async ({ page }) => {
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  // offsetHeight is the layout height, unaffected by the open/zoom animation.
+  const height = () => dialog.evaluate((el) => (el as HTMLElement).offsetHeight);
+  const general = await height();
+  await dialog.getByRole('button', {name: 'About', exact: true}).click();
+  await expect(dialog.getByText('v0.2.0', {exact: true})).toBeVisible();
+  expect(await height()).toBe(general);
+  await dialog.getByRole('button', {name: 'AI', exact: true}).click();
+  expect(await height()).toBe(general);
 });

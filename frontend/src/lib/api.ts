@@ -1,5 +1,6 @@
 export {
   AIService as AI,
+  AppService as Lifecycle,
   DesktopService as Desktop,
   RepositoryService as Git,
   WorkspaceService as Workspace,
@@ -17,6 +18,7 @@ export type {
   LineSelection,
   TerminalCommand,
   TerminalProfile,
+  UpdateInfo,
 } from "../../bindings/mygit-wails3/internal/services/models";
 export type {
   State as WorkspaceState,

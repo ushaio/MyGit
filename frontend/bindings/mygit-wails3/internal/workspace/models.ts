@@ -19,6 +19,13 @@ export interface Preferences {
     "SidebarWidth": number;
 
     /**
+     * DefaultView is the workbench tab MyGit opens with: "git" shows the Git
+     * view, "terminal" shows the terminal view and starts a terminal when the
+     * selected project has none. Older workspace files fall back to "git".
+     */
+    "DefaultView": string;
+
+    /**
      * AIURL, AIKey, AIModel and AICommitPrompt configure the AI service MyGit
      * asks for help. The key is written only to the local workspace file, which
      * the user owns. An empty AICommitPrompt means the built-in prompt.
@@ -27,6 +34,15 @@ export interface Preferences {
     "AIKey": string;
     "AIModel": string;
     "AICommitPrompt": string;
+
+    /**
+     * CloseAction is what the window close button does when the confirmation
+     * reminder is off: "minimize" hides the window to the system tray, "exit"
+     * quits the app. CloseConfirm keeps the reminder on, so the user is asked
+     * again; the dialog's "remember" choice clears it.
+     */
+    "CloseAction": string;
+    "CloseConfirm": boolean;
 }
 
 export interface State {
@@ -39,6 +55,13 @@ export interface State {
     "Drafts": { [_ in string]?: string } | null;
     "PinnedRefs": { [_ in string]?: string[] | null } | null;
     "AutoFetch": { [_ in string]?: string[] | null } | null;
+
+    /**
+     * ProjectOrder remembers the manual drag order of a sidebar section: the key
+     * is "pinned" or a group id, the value is the project paths in display order.
+     * Sections without an entry keep their default alphabetical order.
+     */
+    "ProjectOrder": { [_ in string]?: string[] | null } | null;
     "Preferences": Preferences;
 }
 

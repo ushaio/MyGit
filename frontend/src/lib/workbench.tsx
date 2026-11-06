@@ -416,6 +416,23 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     if (!terminalsRef.current.some((tab) => tab.project === project))
       void openTerminal(project);
   }, [openTerminal, project]);
+  // Apply the default view once, when the workspace first loads, so opening the
+  // app lands on the Git or terminal tab the user picked in Settings. It waits
+  // for the shell profiles so a terminal started here gets the right shell, and
+  // never overrides the tab again afterwards (the ref latches after one run).
+  const defaultViewApplied = useRef(false);
+  useEffect(() => {
+    if (defaultViewApplied.current || !state) return;
+    if (state.Preferences.DefaultView !== "terminal") {
+      defaultViewApplied.current = true;
+      return;
+    }
+    if (profiles === null) return;
+    defaultViewApplied.current = true;
+    setPage("terminal");
+    if (!terminalsRef.current.some((tab) => tab.project === project))
+      void openTerminal(project);
+  }, [state, profiles, project, openTerminal]);
   const closeTerminal = useCallback(
     async (id: string) => {
       try {

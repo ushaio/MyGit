@@ -27,6 +27,10 @@ type Preferences struct {
 	Editor       string
 	Wrap         bool
 	SidebarWidth int
+	// DefaultView is the workbench tab MyGit opens with: "git" shows the Git
+	// view, "terminal" shows the terminal view and starts a terminal when the
+	// selected project has none. Older workspace files fall back to "git".
+	DefaultView string
 	// AIURL, AIKey, AIModel and AICommitPrompt configure the AI service MyGit
 	// asks for help. The key is written only to the local workspace file, which
 	// the user owns. An empty AICommitPrompt means the built-in prompt.
@@ -34,6 +38,12 @@ type Preferences struct {
 	AIKey          string
 	AIModel        string
 	AICommitPrompt string
+	// CloseAction is what the window close button does when the confirmation
+	// reminder is off: "minimize" hides the window to the system tray, "exit"
+	// quits the app. CloseConfirm keeps the reminder on, so the user is asked
+	// again; the dialog's "remember" choice clears it.
+	CloseAction  string
+	CloseConfirm bool
 }
 type State struct {
 	Version     int
@@ -45,7 +55,11 @@ type State struct {
 	Drafts      map[string]string
 	PinnedRefs  map[string][]string
 	AutoFetch   map[string][]string
-	Preferences Preferences
+	// ProjectOrder remembers the manual drag order of a sidebar section: the key
+	// is "pinned" or a group id, the value is the project paths in display order.
+	// Sections without an entry keep their default alphabetical order.
+	ProjectOrder map[string][]string
+	Preferences  Preferences
 }
 
 type Store struct {
@@ -58,7 +72,7 @@ type Store struct {
 
 func NewStore(dir string) (*Store, error) {
 	s := &Store{path: filepath.Join(dir, "workspace.json")}
-	s.state = State{Version: 1, Roots: []string{}, Trees: []*Node{}, Groups: []Group{}, Worktrees: map[string]string{}, Drafts: map[string]string{}, PinnedRefs: map[string][]string{}, AutoFetch: map[string][]string{}, Preferences: Preferences{Theme: "system", Language: "zh-CN", Wrap: true, SidebarWidth: 232}}
+	s.state = State{Version: 1, Roots: []string{}, Trees: []*Node{}, Groups: []Group{}, Worktrees: map[string]string{}, Drafts: map[string]string{}, PinnedRefs: map[string][]string{}, AutoFetch: map[string][]string{}, ProjectOrder: map[string][]string{}, Preferences: Preferences{Theme: "system", Language: "zh-CN", Wrap: true, SidebarWidth: 232, DefaultView: "git", CloseAction: "minimize", CloseConfirm: true}}
 	data, err := os.ReadFile(s.path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -82,6 +96,22 @@ func NewStore(dir string) (*Store, error) {
 	}
 	if s.state.AutoFetch == nil {
 		s.state.AutoFetch = map[string][]string{}
+	}
+	if s.state.ProjectOrder == nil {
+		s.state.ProjectOrder = map[string][]string{}
+	}
+	// Older workspace files predate the close-button preference; keep the
+	// reminder on and default to hiding to the tray instead of quitting.
+	if s.state.Preferences.CloseAction == "" {
+		s.state.Preferences.CloseAction = "minimize"
+	}
+	if s.state.Preferences.CloseAction != "minimize" && s.state.Preferences.CloseAction != "exit" {
+		s.state.Preferences.CloseAction = "minimize"
+	}
+	// Likewise, workspaces saved before the default-view preference existed
+	// (or with an unknown value) open on the Git view.
+	if s.state.Preferences.DefaultView != "git" && s.state.Preferences.DefaultView != "terminal" {
+		s.state.Preferences.DefaultView = "git"
 	}
 	return s, nil
 }
@@ -303,6 +333,27 @@ func (s *Store) SetProject(path, property, value string) (State, error) {
 func (s *Store) RestoreProjects() (State, error) {
 	return s.update(func(st *State) error { walk(st.Trees, func(n *Node) { n.Removed = false }); return nil })
 }
+
+// SetProjectOrder records the display order of one sidebar section. Paths that
+// are empty or repeated are dropped so a stale drop cannot corrupt the list.
+func (s *Store) SetProjectOrder(scope string, paths []string) (State, error) {
+	return s.update(func(st *State) error {
+		if st.ProjectOrder == nil {
+			st.ProjectOrder = map[string][]string{}
+		}
+		cleaned := make([]string, 0, len(paths))
+		seen := map[string]bool{}
+		for _, path := range paths {
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			cleaned = append(cleaned, path)
+		}
+		st.ProjectOrder[scope] = cleaned
+		return nil
+	})
+}
 func (s *Store) SetGroup(id, name string) (State, error) {
 	return s.update(func(st *State) error {
 		index := slices.IndexFunc(st.Groups, func(g Group) bool { return g.ID == id })
@@ -345,6 +396,20 @@ func (s *Store) SetPreferences(p Preferences) (State, error) {
 	if p.AIURL != "" && !validAIURL(p.AIURL) {
 		return State{}, errors.New("enter an http(s) AI address")
 	}
+	switch p.CloseAction {
+	case "minimize", "exit":
+	case "":
+		p.CloseAction = "minimize"
+	default:
+		return State{}, errors.New("invalid close action")
+	}
+	switch p.DefaultView {
+	case "git", "terminal":
+	case "":
+		p.DefaultView = "git"
+	default:
+		return State{}, errors.New("invalid default view")
+	}
 	return s.update(func(st *State) error {
 		if p.Theme != "system" && p.Theme != "light" && p.Theme != "dark" {
 			return errors.New("invalid theme")
@@ -356,6 +421,19 @@ func (s *Store) SetPreferences(p Preferences) (State, error) {
 func validAIURL(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
+}
+
+// RememberCloseAction stores the choice made in the close-confirmation dialog
+// and turns the reminder off, so the same action is reused on the next close.
+func (s *Store) RememberCloseAction(action string) (State, error) {
+	if action != "minimize" && action != "exit" {
+		return State{}, errors.New("invalid close action")
+	}
+	return s.update(func(st *State) error {
+		st.Preferences.CloseAction = action
+		st.Preferences.CloseConfirm = false
+		return nil
+	})
 }
 func (s *Store) PinRef(path, name string, pin bool) (State, error) {
 	return s.update(func(st *State) error {

@@ -35,6 +35,9 @@ func (s *WorkspaceService) UpdateProject(path, property, value string) (workspac
 func (s *WorkspaceService) RestoreProjects() (workspace.State, error) {
 	return s.store.RestoreProjects()
 }
+func (s *WorkspaceService) SetProjectOrder(scope string, paths []string) (workspace.State, error) {
+	return s.store.SetProjectOrder(scope, paths)
+}
 func (s *WorkspaceService) SetGroup(id, name string) (workspace.State, error) {
 	return s.store.SetGroup(id, name)
 }
