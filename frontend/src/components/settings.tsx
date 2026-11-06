@@ -31,7 +31,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -288,9 +287,10 @@ export function SettingsDialog() {
               label={t("API Key")}
               hint={t("Stored only in this computer's workspace file.")}
             >
-              <div className="flex items-center gap-2">
+              <div className="relative">
                 <Input
                   aria-label={t("API Key")}
+                  className="pr-10"
                   autoComplete="off"
                   spellCheck={false}
                   type={reveal ? "text" : "password"}
@@ -302,23 +302,25 @@ export function SettingsDialog() {
                     )
                   }
                 />
-                <IconButton
-                  label={reveal ? "Hide key" : "Show key"}
-                  onClick={() => setReveal((value) => !value)}
-                >
-                  {reveal ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </IconButton>
+                <div className="absolute top-1/2 right-1 -translate-y-1/2">
+                  <IconButton
+                    label={reveal ? "Hide key" : "Show key"}
+                    onClick={() => setReveal((value) => !value)}
+                  >
+                    {reveal ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </IconButton>
+                </div>
               </div>
             </Field>
             <Field
               label={t("Model")}
               hint={t("Leave it empty to use the endpoint default.")}
             >
-              <div className="flex items-center gap-2">
+              <div className="relative">
                 {shownModels.length ? (
                   <Select
                     value={chosenModel || "__none__"}
@@ -332,7 +334,10 @@ export function SettingsDialog() {
                       )
                     }
                   >
-                    <SelectTrigger className="w-full" aria-label={t("Model")}>
+                    <SelectTrigger
+                      className="w-full pr-10"
+                      aria-label={t("Model")}
+                    >
                       <SelectValue placeholder={t("Choose a model")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -355,6 +360,7 @@ export function SettingsDialog() {
                 ) : (
                   <Input
                     aria-label={t("Model")}
+                    className="pr-10"
                     autoComplete="off"
                     spellCheck={false}
                     placeholder={t("For example deepseek-chat.")}
@@ -366,17 +372,19 @@ export function SettingsDialog() {
                     }
                   />
                 )}
-                <IconButton
-                  label="Fetch models"
-                  disabled={loadingModels || !address || !!addressError}
-                  onClick={() => void loadModels(address, autoKey, true)}
-                >
-                  {loadingModels ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                </IconButton>
+                <div className="absolute top-1/2 right-1 -translate-y-1/2">
+                  <IconButton
+                    label="Fetch models"
+                    disabled={loadingModels || !address || !!addressError}
+                    onClick={() => void loadModels(address, autoKey, true)}
+                  >
+                    {loadingModels ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                  </IconButton>
+                </div>
               </div>
               <div className="min-h-4 text-[11px]" aria-live="polite">
                 {loadingModels ? (
@@ -615,9 +623,6 @@ export function SettingsDialog() {
                   {update.error}
                 </span>
               )}
-              <span className="text-center text-[10px] text-muted-foreground">
-                {t("The update downloads and installs inside MyGit.")}
-              </span>
               <div className="grid gap-1 pt-1">
                 <button
                   type="button"
@@ -711,7 +716,6 @@ export function SettingsDialog() {
       <DialogContent className="grid-rows-[auto_minmax(0,1fr)] h-[34rem] max-h-[calc(100vh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>{t("Settings")}</DialogTitle>
-          <DialogDescription>MyGit</DialogDescription>
         </DialogHeader>
         <form
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -746,7 +750,7 @@ export function SettingsDialog() {
                 </button>
               ))}
             </nav>
-            <div className="min-w-0 flex-1 overflow-y-auto p-6">{panel()}</div>
+            <div className="min-w-0 flex-1 overflow-y-auto p-6 [scrollbar-gutter:stable]">{panel()}</div>
           </div>
           <DialogFooter className="border-t px-6 py-3">
             <Button

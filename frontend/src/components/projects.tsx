@@ -47,6 +47,7 @@ import { copy, report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
 import { IconButton, Section } from "./shared";
 import { ShellIcon } from "./shell-icon";
+import { AddProjectDialog } from "./add-project-dialog";
 
 // orderProjects applies the manual drag order saved for one sidebar section.
 // Projects that were never ranked keep their incoming (alphabetical) order and
@@ -69,6 +70,7 @@ export function ProjectSidebar() {
   const w = useWorkbench(),
     t = useT();
   const [group, setGroup] = useState<{ id: string; name: string } | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dragPath, setDragPath] = useState("");
@@ -350,7 +352,7 @@ export function ProjectSidebar() {
           MyGit
         </strong>
         <div className="ml-auto">
-          <IconButton label="Add folder" onClick={w.addFolder}>
+          <IconButton label="Add folder" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" />
           </IconButton>
         </div>
@@ -455,6 +457,7 @@ export function ProjectSidebar() {
           <Settings className="size-3.5" />
         </IconButton>
       </div>
+      <AddProjectDialog open={addOpen} onOpenChange={setAddOpen} />
       <Dialog
         open={!!group}
         onOpenChange={(open) => {

@@ -1,0 +1,48 @@
+name: 新功能
+description: 提出一个新的功能需求（类别：feature）
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本模板用于 **feature** 类需求。若你要报 bug 或提优化建议，请返回并选择对应模板。
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      description: 该功能主要面向的操作系统。
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 当前使用的 MyGit 版本，可在「设置 → 关于」中查看。
+      placeholder: v0.2.0
+    validations:
+      required: true
+  - type: textarea
+    id: background
+    attributes:
+      label: 需求背景
+      description: 为什么需要这个功能？解决了什么问题？
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望功能
+      description: 你希望它如何工作？
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图 / 参考资料
+    validations:
+      required: false

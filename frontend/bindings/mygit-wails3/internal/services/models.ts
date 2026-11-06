@@ -50,6 +50,15 @@ export interface ChangeRequest {
     "Mode": string;
 }
 
+/**
+ * CloneResult tells the frontend which folder was actually cloned and hands
+ * back the refreshed workspace so the new project can be shown and selected.
+ */
+export interface CloneResult {
+    "State": workspace$0.State;
+    "Path": string;
+}
+
 export interface FileContent {
     "File": gitrepo$0.FileChange;
     "Before": string;

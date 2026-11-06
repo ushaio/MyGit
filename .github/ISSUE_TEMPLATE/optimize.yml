@@ -1,0 +1,48 @@
+name: 优化建议
+description: 提交体验、性能或交互优化建议（类别：optimize）
+title: "[Optimize] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本模板用于 **optimize** 类建议。若你要报 bug 或提新功能，请返回并选择对应模板。
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      description: 主要使用的操作系统。
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 你的 MyGit 版本，可在「设置 → 关于」中查看。
+      placeholder: v0.2.0
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: 现状
+      description: 目前哪里不够好？
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的优化
+      description: 你希望改进成什么样？
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图 / 补充信息
+    validations:
+      required: false

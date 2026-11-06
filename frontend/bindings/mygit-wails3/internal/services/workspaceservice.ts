@@ -9,8 +9,22 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 export function AddFolder(path: string): $CancellablePromise<workspace$0.State> {
     return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.AddFolder", path);
+}
+
+/**
+ * Clone runs `git clone` into a target folder and adds the result as a
+ * workspace root. Git's progress lines are streamed to the UI as
+ * "clone:progress" events so the dialog can show the log and a percentage bar
+ * while the clone runs.
+ */
+export function Clone(url: string, target: string): $CancellablePromise<$models.CloneResult> {
+    return $Call.ByName("mygit-wails3/internal/services.WorkspaceService.Clone", url, target);
 }
 
 /**

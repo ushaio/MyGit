@@ -40,6 +40,20 @@ export function createBackend() {
       case "DefaultCommitPrompt": return "You write commit messages for a Git repository."
       case "CommitMessage": return "feat: describe the staged changes"
       case "ChooseFolder": return ""
+      case "AddFolder": {
+        const added = args[0] as string
+        state.Roots = [...(state.Roots || []), added]
+        state.Trees = [...(state.Trees || []), node(added, true)]
+        return structuredClone(state)
+      }
+      case "Clone": {
+        const target = args[1] as string
+        const cloned = `${target}/repo`
+        state.Roots = [...(state.Roots || []), cloned]
+        state.Trees = [...(state.Trees || []), node(cloned, true)]
+        state.Selected = cloned
+        return { State: structuredClone(state), Path: cloned }
+      }
       case "Blame": return []
       case "Start": terminals.push(args[0] as string); terminalShells.push(args[3] as string); return `term-${terminals.length}`
       case "Profiles": return [

@@ -20,6 +20,7 @@ export type {
     AIModel,
     Action,
     ChangeRequest,
+    CloneResult,
     FileContent,
     FileRequest,
     HistoryPage,

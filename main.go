@@ -38,6 +38,7 @@ func main() {
 	repository := services.NewRepositoryService(store)
 	repository.AttachFiles(desktop)
 	appService := services.NewAppService(store)
+	workspaceService := services.NewWorkspaceService(store)
 	frontend, err := fs.Sub(assets, "frontend/dist")
 	if err != nil {
 		log.Fatal(err)
@@ -45,7 +46,7 @@ func main() {
 	app := application.New(application.Options{
 		Name: "MyGit", Description: "A worktree-centered Git workspace",
 		Services: []application.Service{
-			application.NewService(services.NewWorkspaceService(store)),
+			application.NewService(workspaceService),
 			application.NewService(repository),
 			application.NewService(desktop),
 			application.NewService(appService),
@@ -62,6 +63,7 @@ func main() {
 		BackgroundColour: application.NewRGB(248, 250, 252),
 	})
 	appService.Attach(app, window)
+	workspaceService.AttachWindow(window)
 	// The close button never destroys the window directly: depending on the
 	// saved preference it either asks the frontend, hides to the tray, or —
 	// when an explicit quit is in progress — lets the window close for real.

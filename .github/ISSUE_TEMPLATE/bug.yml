@@ -1,0 +1,57 @@
+name: Bug 报告
+description: 报告一个可复现的问题（类别：bug）
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本模板用于 **bug** 类问题。若你要提优化建议或新功能，请返回并选择对应模板。
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      description: 出现问题的操作系统。
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 出现问题的 MyGit 版本，可在「设置 → 关于」中查看。
+      placeholder: v0.2.0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么？请尽量描述清楚。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图 / 日志 / 补充信息
+    validations:
+      required: false

@@ -145,3 +145,22 @@ test('settings dialog keeps a fixed height when switching sections', async ({ pa
   await dialog.getByRole('button', {name: 'AI', exact: true}).click();
   expect(await height()).toBe(general);
 });
+
+test('settings dialog drops the subtitle and update note, and aligns its fields', async ({ page }) => {
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  // The dialog title no longer has a "MyGit" description line under it.
+  await expect(dialog.locator('[data-slot="dialog-description"]')).toHaveCount(0);
+  await dialog.getByRole('button', {name: 'About', exact: true}).click();
+  await expect(
+    dialog.getByText('The update downloads and installs inside MyGit.'),
+  ).toHaveCount(0);
+  // The AI fields share one right edge even where a trailing action button sits.
+  await dialog.getByRole('button', {name: 'AI', exact: true}).click();
+  const apiUrl = (await dialog.getByLabel('API URL', {exact: true}).boundingBox())!;
+  const apiKey = (await dialog.getByLabel('API Key', {exact: true}).boundingBox())!;
+  const model = (await dialog.getByLabel('Model', {exact: true}).boundingBox())!;
+  const right = apiUrl.x + apiUrl.width;
+  expect(Math.abs(apiKey.x + apiKey.width - right)).toBeLessThanOrEqual(1);
+  expect(Math.abs(model.x + model.width - right)).toBeLessThanOrEqual(1);
+});

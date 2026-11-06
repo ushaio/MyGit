@@ -4,13 +4,25 @@ import (
 	"context"
 	"os"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"mygit-wails3/internal/workspace"
 )
 
-type WorkspaceService struct{ store *workspace.Store }
+type WorkspaceService struct {
+	store  *workspace.Store
+	window *application.WebviewWindow
+}
 
 func NewWorkspaceService(store *workspace.Store) *WorkspaceService {
 	return &WorkspaceService{store: store}
+}
+
+// AttachWindow gives the service a window to emit clone progress on. Cloning
+// happens before any repository exists, so the workspace service owns it.
+//
+//wails:ignore
+func (s *WorkspaceService) AttachWindow(window *application.WebviewWindow) {
+	s.window = window
 }
 func (s *WorkspaceService) State() workspace.State { return s.store.Snapshot() }
 

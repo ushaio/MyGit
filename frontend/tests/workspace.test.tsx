@@ -236,6 +236,29 @@ it("reorders grouped projects by drag and drop and keeps the order", async () =>
   const labels = screen.getAllByRole("button").filter((el) => el.classList.contains("nav-project")).map((el) => el.textContent)
   expect(labels).toEqual(["beta", "alpha"])
 })
+it("offers clone and add-folder from the sidebar add button", async () => {
+  const user = await ready()
+  vi.mocked(Call.ByName).mockImplementation(((name: string, ...args: unknown[]) =>
+    name.endsWith(".ChooseFolder")
+      ? Promise.resolve("C:/Clone")
+      : backend.call(name, ...args)) as typeof Call.ByName)
+  await user.click(screen.getByRole("button", { name: "Add folder" }))
+  const dialog = await screen.findByRole("dialog")
+  expect(within(dialog).getByText("Clone from Git")).toBeInTheDocument()
+  expect(
+    within(dialog).getByText("Add a local folder you already have."),
+  ).toBeInTheDocument()
+  await user.click(within(dialog).getByRole("button", { name: /Clone from Git/ }))
+  const address = await within(dialog).findByRole("textbox", {
+    name: "Repository address",
+  })
+  await user.type(address, "https://github.com/example/repo.git")
+  await user.click(within(dialog).getByRole("button", { name: "Confirm" }))
+  await waitFor(() => expect(backend.state.Selected).toBe("C:/Clone/repo"))
+  expect(
+    await within(dialog).findByRole("button", { name: "Done" }),
+  ).toBeInTheDocument()
+})
 it("asks what closing should do and remembers the choice", async () => {
   const listeners: Record<string, () => void> = {}
   vi.mocked(Events.On).mockImplementation(((name: string, callback: () => void) => { listeners[name] = callback; return () => {} }) as typeof Events.On)
