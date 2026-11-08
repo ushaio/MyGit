@@ -6,6 +6,9 @@ vars:
   PACKAGE_MANAGER: npm
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
   GOOS: '{{.GOOS | default OS}}'
+  # Product version, read from build/config.yml, used to version artifact filenames.
+  VERSION:
+    sh: go run ./build/version
 
 env:
   GOWORK: 'off'
@@ -25,6 +28,10 @@ tasks:
     summary: Package the application for the host platform
     cmds:
       - task: '{{.GOOS}}:package'
+  version:
+    summary: Print the product version from build/config.yml
+    cmds:
+      - echo {{.VERSION}}
   run:
     summary: Run the built application
     cmds:

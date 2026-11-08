@@ -108,6 +108,14 @@ tasks:
       - task: create:deb
       - task: create:rpm
       - task: create:aur
+      # AppImage output is named <binary>-<arch>.AppImage; add the version.
+      - cmd: |
+          for f in {{.BIN_DIR}}/*.AppImage; do
+            [ -e "$f" ] || continue
+            base=$(basename "$f" .AppImage); base=${base#mygit-}
+            mv -f "$f" "{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-${base}.AppImage"
+          done
+        platforms: [linux]
 
   create:appimage:
     summary: Creates an AppImage
@@ -155,17 +163,17 @@ tasks:
   generate:deb:
     summary: Creates a deb package
     cmds:
-      - go tool wails3 tool package -name "{{.APP_NAME}}" -format deb -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
+      - go tool wails3 tool package -name "{{.APP_NAME}}-{{.VERSION}}" -format deb -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
 
   generate:rpm:
     summary: Creates a rpm package
     cmds:
-      - go tool wails3 tool package -name "{{.APP_NAME}}" -format rpm -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
+      - go tool wails3 tool package -name "{{.APP_NAME}}-{{.VERSION}}" -format rpm -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
 
   generate:aur:
     summary: Creates a arch linux packager package
     cmds:
-      - go tool wails3 tool package -name "{{.APP_NAME}}" -format archlinux -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
+      - go tool wails3 tool package -name "{{.APP_NAME}}-{{.VERSION}}" -format archlinux -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
 
   generate:dotdesktop:
     summary: Generates a `.desktop` file

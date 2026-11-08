@@ -19,7 +19,7 @@ import (
 // Version is the version the running build reports. Keep it in sync with
 // frontend/src/lib/app-info.ts and build/config.yml; a release build may
 // override it with -ldflags "-X mygit-wails3/internal/services.Version=…".
-var Version = "0.3.0"
+var Version = "0.3.1"
 
 const (
 	updateTimeout   = 10 * time.Second

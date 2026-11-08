@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { WorkbenchProvider } from "@/lib/workbench"
 import App from "@/App"
+import { APP_VERSION } from "@/lib/app-info"
 import { alpha, beta, createBackend, linked } from "./backend"
 
 vi.mock("@/components/terminal", () => ({ TerminalPane: () => null }))
@@ -163,13 +164,13 @@ it("opens the data location from the folders section", async () => {
 })
 it("checks for updates before offering the download", async () => {
   backend.checkUpdateResult.Available = true
-  backend.checkUpdateResult.Latest = "0.3.0"
-  backend.checkUpdateResult.URL = "https://github.com/ushaio/MyGit/releases/tag/v0.3.0"
+  backend.checkUpdateResult.Latest = "9.9.9"
+  backend.checkUpdateResult.URL = "https://github.com/ushaio/MyGit/releases/tag/v9.9.9"
   const user = await ready()
   await user.click(screen.getByRole("button", { name: "Settings" }))
   const dialog = await screen.findByRole("dialog")
   await user.click(within(dialog).getByRole("button", { name: "About" }))
-  expect(within(dialog).getAllByText("v0.2.0").length).toBeGreaterThan(0)
+  expect(within(dialog).getAllByText("v" + APP_VERSION).length).toBeGreaterThan(0)
   expect(
     within(dialog).getByText(/Manage several repositories and all of their worktrees/),
   ).toBeInTheDocument()
@@ -179,7 +180,7 @@ it("checks for updates before offering the download", async () => {
   await waitFor(() =>
     expect(within(dialog).getByText("A new version is available:")).toBeInTheDocument(),
   )
-  expect(within(dialog).getByText("v0.3.0")).toBeInTheDocument()
+  expect(within(dialog).getByText("v9.9.9")).toBeInTheDocument()
   await user.click(within(dialog).getByRole("button", { name: "Download and install" }))
   await waitFor(() => expect(backend.downloaded).toBe(1))
   await waitFor(() =>
@@ -208,10 +209,10 @@ it("reports when there is no newer version", async () => {
 })
 it("shows a floating update prompt on launch and installs in place", async () => {
   backend.checkUpdateResult.Available = true
-  backend.checkUpdateResult.Latest = "0.3.0"
+  backend.checkUpdateResult.Latest = "9.9.9"
   const user = await ready()
   const prompt = await screen.findByRole("status", { name: "Software update" })
-  expect(within(prompt).getByText("v0.3.0")).toBeInTheDocument()
+  expect(within(prompt).getByText("v9.9.9")).toBeInTheDocument()
   await user.click(
     within(prompt).getByRole("button", { name: "Download and install" }),
   )

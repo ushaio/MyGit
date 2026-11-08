@@ -72,7 +72,10 @@ ManifestDPIAware true
 #!finalize 'signtool --file "%1"'
 
 Name "${INFO_PRODUCTNAME}"
-OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
+
+# Artifact filename carries the product version and architecture for clarity,
+# e.g. MyGit-0.3.1-amd64-installer.exe
+OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${INFO_PRODUCTVERSION}-${ARCH}-installer.exe" # Name of the installer's file.
 !if "${WAILS_INSTALL_SCOPE}" == "user"
     InstallDir "$LOCALAPPDATA\Programs\${INFO_PRODUCTNAME}"
 !else
@@ -81,7 +84,54 @@ OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the i
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
+   SetRegView 64
+
+   ; Reuse the directory chosen the last time the app was installed, so upgrades
+   ; do not require picking the location again. The key is removed on uninstall.
+   !if "${WAILS_INSTALL_SCOPE}" == "user"
+       ReadRegStr $0 HKCU "${UNINST_KEY}" "InstallLocation"
+   !else
+       ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
+   !endif
+   ${If} $0 != ""
+       StrCpy $INSTDIR $0
+   ${EndIf}
+
    !insertmacro wails.checkArchitecture
+
+   ; Close a running instance before we overwrite files.
+   Call EnsureAppClosed
+FunctionEnd
+
+; If a running instance is detected, offer to close it and continue. Loops until
+; the process is gone (or the user aborts).
+Function EnsureAppClosed
+   StrCpy $R5 0
+   StrCpy $R6 0
+   ensure_check:
+   nsExec::ExecToStack 'cmd /C tasklist /FI "IMAGENAME eq ${PRODUCT_EXECUTABLE}" /NH | findstr /I /C:"${PRODUCT_EXECUTABLE}" >nul'
+   Pop $0
+   Pop $1
+   ${If} $0 != 0
+       Return
+   ${EndIf}
+   ${If} $R5 == 0
+       MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "${INFO_PRODUCTNAME} is currently running. Setup must close it before continuing.$\r$\n$\r$\nClose it and continue the installation?" IDOK ensure_close IDCANCEL ensure_abort
+       StrCpy $R5 1
+   ${EndIf}
+   ensure_close:
+   nsExec::ExecToStack 'cmd /C taskkill /F /IM ${PRODUCT_EXECUTABLE}'
+   Pop $0
+   Pop $1
+   Sleep 1000
+   IntOp $R6 $R6 + 1
+   ${If} $R6 >= 12
+       MessageBox MB_OK|MB_ICONSTOP "Could not close ${INFO_PRODUCTNAME}. Please close it manually and run Setup again."
+       Abort
+   ${EndIf}
+   Goto ensure_check
+   ensure_abort:
+   Abort
 FunctionEnd
 
 Section
@@ -92,6 +142,14 @@ Section
     SetOutPath $INSTDIR
     
     !insertmacro wails.files
+
+    ; Remember the install location so upgrades can preselect it.
+    SetRegView 64
+    !if "${WAILS_INSTALL_SCOPE}" == "user"
+        WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
+    !else
+        WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
+    !endif
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"

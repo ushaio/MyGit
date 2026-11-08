@@ -147,6 +147,8 @@ tasks:
         --window-width "{{.DMG_WINDOW_WIDTH}}"
         --window-height "{{.DMG_WINDOW_HEIGHT}}"
         {{if .DMG_FILES}}--files "{{.DMG_FILES}}"{{end}}
+      - cmd: 'if [ -f "{{.BIN_DIR}}/{{.APP_NAME}}.dmg" ]; then mv -f "{{.BIN_DIR}}/{{.APP_NAME}}.dmg" "{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}.dmg"; fi'
+        platforms: [darwin]
     vars:
       DMG_BACKGROUND: '{{.DMG_BACKGROUND | default "build/darwin/dmg-background.png"}}'
       DMG_VOLUME_ICON: '{{.DMG_VOLUME_ICON | default "build/darwin/icons.icns"}}'

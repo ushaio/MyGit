@@ -12,6 +12,16 @@
 
 - （暂无）
 
+## [0.3.1] - 2026-11-08
+
+### 新增
+
+- Windows 安装程序会记住上一次的安装目录，升级时自动沿用（免去每次重新选择）；安装时若检测到 MyGit 正在运行，会提示并可自动关闭应用后继续安装，不再因文件占用导致安装失败。
+
+### 变更
+
+- 打包产物文件名统一追加版本号，例如 `MyGit-<版本>-amd64-installer.exe`、`MyGit-<版本>.exe`、`MyGit-<版本>.dmg`、`MyGit-<版本>.deb`、`MyGit-<版本>.rpm`、`MyGit-<版本>.pkg.tar.zst`、`MyGit-<版本>-x86_64.AppImage`。
+
 ## [0.3.0] - 2026-11-08
 
 ### 新增
@@ -102,7 +112,8 @@
 
 - 新增 `README.md`，包含 Logo、特性与技术栈说明，以及友情链接（LINUX DO、OneGit）。
 
-[未发布]: https://github.com/ushaio/MyGit/compare/v0.3.0...HEAD
+[未发布]: https://github.com/ushaio/MyGit/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ushaio/MyGit/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ushaio/MyGit/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ushaio/MyGit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ushaio/MyGit/releases/tag/v0.1.0
