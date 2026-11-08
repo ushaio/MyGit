@@ -5,7 +5,7 @@ import (
 	"syscall"
 )
 
-// hideConsole keeps git from opening a console window.
+// hideConsole keeps background child processes from opening a console window.
 func hideConsole(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}

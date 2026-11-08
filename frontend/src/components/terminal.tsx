@@ -39,9 +39,10 @@ export function TerminalPane({ visible }: { visible: boolean }) {
   const w = useWorkbench(),
     t = useT();
   const dragged = useRef("");
-  const [form, setForm] = useState<{ initial: TerminalCommand | null } | null>(
-    null,
-  );
+  const [form, setForm] = useState<{
+    initial: TerminalCommand | null;
+    common: boolean;
+  } | null>(null);
   const tabs = w.terminalsFor(w.project);
   return (
     <section
@@ -67,7 +68,9 @@ export function TerminalPane({ visible }: { visible: boolean }) {
                     "flex h-8 shrink-0 items-center rounded-md border border-transparent px-2 text-xs",
                     w.activeTerminal === tab.id && "border-border bg-background",
                   )}
-                  title={tab.shell ? `${tab.shell} — ${tab.path}` : tab.path}
+                  title={`${tab.command ? `${tab.command} — ` : ""}${
+                    tab.shell ? `${tab.shell} — ${tab.path}` : tab.path
+                  }`}
                 >
                   <button
                     className="flex items-center gap-2"
@@ -128,75 +131,84 @@ export function TerminalPane({ visible }: { visible: boolean }) {
         className="terminal-profiles"
         aria-label={t("Terminal commands")}
       >
-        <div className="terminal-profiles-title">
-          <span>{t("Terminal commands")}</span>
-          <IconButton
-            label={t("New command")}
-            onClick={() => setForm({ initial: null })}
-          >
-            <Plus className="size-3.5" />
-          </IconButton>
-        </div>
-        <div className="terminal-profiles-list">
-          {w.commands.map((command) => (
-            <ContextMenu key={command.ID}>
-              <ContextMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="terminal-profile"
-                  title={`${command.Label} — ${command.Command}${command.Path ? ` @ ${command.Path}` : ""}`}
-                  onClick={() => w.runCommand(command)}
-                >
-                  <TerminalSquare className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="truncate">{command.Label}</span>
-                      <span className="terminal-command-shell">
-                        {t(shellLabel(w.profiles, command.Profile))}
-                      </span>
-                    </span>
-                    <span className="terminal-profile-detail">
-                      {command.Command}
-                    </span>
-                    {command.Path && command.Path !== w.path && (
-                      <span className="terminal-profile-detail">
-                        {command.Path}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem onSelect={() => setForm({ initial: command })}>
-                  {t("Edit command")}
-                </ContextMenuItem>
-                <ContextMenuItem
-                  onSelect={() =>
-                    void w.saveCommands(
-                      w.commands.filter((item) => item.ID !== command.ID),
-                    )
-                  }
-                >
-                  {t("Delete command")}
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          ))}
-          {!w.commands.length && (
-            <div className="terminal-profile-empty">
-              {t("No commands yet. Add one with +.")}
-            </div>
-          )}
-        </div>
+        <section className="terminal-profiles-section">
+          <div className="terminal-profiles-title">
+            <span>{t("Terminal commands")}</span>
+            <IconButton
+              label={t("New command")}
+              onClick={() => setForm({ initial: null, common: false })}
+            >
+              <Plus className="size-3.5" />
+            </IconButton>
+          </div>
+          <CommandList
+            commands={w.commands}
+            profiles={w.profiles}
+            currentPath={w.path}
+            onRun={w.runCommand}
+            onEdit={(command) => setForm({ initial: command, common: false })}
+            onMove={(command) => void w.moveCommand(command.ID, true)}
+            moveLabel={t("Move to general commands")}
+            onDelete={(command) =>
+              void w.saveCommands(
+                w.commands.filter((item) => item.ID !== command.ID),
+              )
+            }
+            emptyLabel={t("No commands yet. Add one with +.")}
+          />
+        </section>
+        <section
+          className="terminal-profiles-section terminal-profiles-common"
+          aria-label={t("General commands")}
+        >
+          <div className="terminal-profiles-title">
+            <span>{t("General commands")}</span>
+            <IconButton
+              label={t("New general command")}
+              onClick={() => setForm({ initial: null, common: true })}
+            >
+              <Plus className="size-3.5" />
+            </IconButton>
+          </div>
+          <CommandList
+            commands={w.commonCommands}
+            profiles={w.profiles}
+            currentPath={w.path}
+            onRun={w.runCommand}
+            onEdit={(command) => setForm({ initial: command, common: true })}
+            onMove={(command) => void w.moveCommand(command.ID, false)}
+            moveLabel={t("Move to project commands")}
+            onDelete={(command) =>
+              void w.saveCommonCommands(
+                w.commonCommands.filter((item) => item.ID !== command.ID),
+              )
+            }
+            emptyLabel={t("No general commands yet. Add one with +.")}
+            showPath={false}
+          />
+        </section>
       </aside>
       <CommandDialog
-        key={form ? form.initial?.ID || "new" : "closed"}
+        key={
+          form
+            ? `${form.common ? "common" : "project"}-${form.initial?.ID || "new"}`
+            : "closed"
+        }
         open={form !== null}
         initial={form?.initial || null}
+        common={form?.common || false}
         profiles={w.profiles}
-        defaultPath={w.path}
+        defaultPath={form?.common ? "" : w.path}
         onClose={() => setForm(null)}
         onSave={async (command) => {
+          if (form?.common) {
+            const next = command.ID
+              ? w.commonCommands.map((item) =>
+                  item.ID === command.ID ? command : item,
+                )
+              : [...w.commonCommands, command];
+            return w.saveCommonCommands(next);
+          }
           const next = command.ID
             ? w.commands.map((item) =>
                 item.ID === command.ID ? command : item,
@@ -206,6 +218,84 @@ export function TerminalPane({ visible }: { visible: boolean }) {
         }}
       />
     </section>
+  );
+}
+
+function CommandList({
+  commands,
+  profiles,
+  currentPath,
+  onRun,
+  onEdit,
+  onMove,
+  onDelete,
+  moveLabel,
+  emptyLabel,
+  showPath = true,
+}: {
+  commands: TerminalCommand[];
+  profiles: TerminalProfile[] | null;
+  currentPath: string;
+  onRun: (command: TerminalCommand) => void;
+  onEdit: (command: TerminalCommand) => void;
+  onMove: (command: TerminalCommand) => void;
+  onDelete: (command: TerminalCommand) => void;
+  moveLabel: string;
+  emptyLabel: string;
+  showPath?: boolean;
+}) {
+  const t = useT();
+  return (
+    <div className="terminal-profiles-list">
+      {commands.map((command) => (
+        <ContextMenu key={command.ID}>
+          <ContextMenuTrigger asChild>
+            <button
+              type="button"
+              className="terminal-profile"
+              title={`${command.Label} — ${command.Command}${
+                showPath && command.Path ? ` @ ${command.Path}` : ""
+              }`}
+              onClick={() => onRun(command)}
+            >
+              <TerminalSquare className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate">{command.Label}</span>
+                  <span className="terminal-command-shell">
+                    {t(shellLabel(profiles, command.Profile))}
+                  </span>
+                </span>
+                <span className="terminal-profile-detail">
+                  {command.Command}
+                </span>
+                {showPath &&
+                  command.Path &&
+                  command.Path !== currentPath && (
+                    <span className="terminal-profile-detail">
+                      {command.Path}
+                    </span>
+                  )}
+              </span>
+            </button>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => onEdit(command)}>
+              {t("Edit command")}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onMove(command)}>
+              {moveLabel}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onDelete(command)}>
+              {t("Delete command")}
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      ))}
+      {!commands.length && (
+        <div className="terminal-profile-empty">{emptyLabel}</div>
+      )}
+    </div>
   );
 }
 
@@ -221,6 +311,7 @@ function shellLabel(profiles: TerminalProfile[] | null, id: string) {
 function CommandDialog({
   open,
   initial,
+  common,
   profiles,
   defaultPath,
   onClose,
@@ -228,6 +319,7 @@ function CommandDialog({
 }: {
   open: boolean;
   initial: TerminalCommand | null;
+  common: boolean;
   profiles: TerminalProfile[] | null;
   defaultPath: string;
   onClose: () => void;
@@ -277,7 +369,9 @@ function CommandDialog({
           <DialogTitle>{t(initial ? "Edit command" : "New command")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Commands run in the chosen shell inside the working directory — the project folder by default.",
+              common
+                ? "General commands are shown in every project; the working directory defaults to the project folder."
+                : "Commands run in the chosen shell inside the working directory — the project folder by default.",
             )}
           </DialogDescription>
         </DialogHeader>
@@ -310,7 +404,7 @@ function CommandDialog({
                 className="font-mono"
                 value={path}
                 onChange={(event) => setPath(event.target.value)}
-                placeholder={defaultPath}
+                placeholder={defaultPath || t("Project folder")}
               />
               <Button
                 type="button"

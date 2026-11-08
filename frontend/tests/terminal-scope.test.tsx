@@ -50,6 +50,16 @@ function Probe() {
       >
         run-command
       </button>
+      <button
+        onClick={() => void w.moveCommand(w.commands[0]?.ID || "", true)}
+      >
+        move-to-common
+      </button>
+      <button
+        onClick={() => void w.moveCommand(w.commonCommands[0]?.ID || "", false)}
+      >
+        move-to-project
+      </button>
       <output data-testid="active">{w.activeTerminal}</output>
       <output data-testid="project">{w.project}</output>
       <output data-testid="mine">
@@ -60,6 +70,9 @@ function Probe() {
       </output>
       <output data-testid="commands">
         {w.commands.map((command) => command.Label).join(",")}
+      </output>
+      <output data-testid="common">
+        {w.commonCommands.map((command) => command.Label).join(",")}
       </output>
     </div>
   )
@@ -181,4 +194,64 @@ it("closes the active terminal tab on Ctrl+W", async () => {
     expect(screen.getByTestId("mine").textContent).toBe(""),
   )
   expect(backend.closedTerminals).toEqual(["term-1"])
+})
+
+it("moves a command to the general list, where every project sees it", async () => {
+  mount()
+  const user = userEvent.setup()
+  await waitFor(() =>
+    expect(screen.getByTestId("project")).toHaveTextContent(alpha),
+  )
+  await user.click(screen.getByRole("button", { name: "add-command" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("commands")).toHaveTextContent("Dev server"),
+  )
+
+  await user.click(screen.getByRole("button", { name: "move-to-common" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("common")).toHaveTextContent("Dev server"),
+  )
+  expect(screen.getByTestId("commands").textContent).toBe("")
+  expect(backend.commonTerminalCommands).toEqual([
+    {
+      ID: "cmd-1",
+      Label: "Dev server",
+      Command: "npm run dev",
+      Profile: "",
+      Path: alpha,
+    },
+  ])
+
+  // The general list is not bound to the project that created it.
+  await user.click(screen.getByRole("button", { name: "select-beta" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("project")).toHaveTextContent(beta),
+  )
+  await waitFor(() =>
+    expect(screen.getByTestId("common")).toHaveTextContent("Dev server"),
+  )
+  expect(screen.getByTestId("commands").textContent).toBe("")
+})
+
+it("moves a general command back into the selected project", async () => {
+  mount()
+  const user = userEvent.setup()
+  await waitFor(() =>
+    expect(screen.getByTestId("project")).toHaveTextContent(alpha),
+  )
+  await user.click(screen.getByRole("button", { name: "add-command" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("commands")).toHaveTextContent("Dev server"),
+  )
+  await user.click(screen.getByRole("button", { name: "move-to-common" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("common")).toHaveTextContent("Dev server"),
+  )
+
+  await user.click(screen.getByRole("button", { name: "move-to-project" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("commands")).toHaveTextContent("Dev server"),
+  )
+  expect(screen.getByTestId("common").textContent).toBe("")
+  expect(backend.commonTerminalCommands).toEqual([])
 })

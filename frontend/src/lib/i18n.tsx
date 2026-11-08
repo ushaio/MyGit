@@ -2,6 +2,8 @@ import { createContext, useContext, type ReactNode } from "react";
 
 const zh: Record<string, string> = {
   Repositories: "仓库",
+  Platforms: "平台",
+  All: "全部",
   Pinned: "已固定",
   Folders: "目录",
   Projects: "项目",
@@ -33,7 +35,8 @@ const zh: Record<string, string> = {
   "Group name": "分组名称",
   Pin: "固定",
   Unpin: "取消固定",
-  "Move to group": "移至分组",
+  "Move to group": "移到分组",
+  "Set group": "设置分组",
   Ungrouped: "未分组",
   "Remove project": "移除项目",
   "Remove folder": "移除目录",
@@ -194,6 +197,14 @@ const zh: Record<string, string> = {
     "命令会在所选终端中、项目目录下执行。",
   "For example: Dev server": "例如：开发服务器",
   "No commands yet. Add one with +.": "还没有快捷命令，点击 + 添加。",
+  "General commands": "通用命令",
+  "New general command": "新建通用命令",
+  "Move to general commands": "移至通用命令",
+  "Move to project commands": "移至项目命令",
+  "No general commands yet. Add one with +.": "还没有通用命令，点击 + 添加。",
+  "Project folder": "项目目录",
+  "General commands are shown in every project; the working directory defaults to the project folder.":
+    "通用命令会在所有项目中显示，工作目录默认为项目目录。",
   Editor: "编辑器",
   System: "跟随系统",
   Light: "浅色",
@@ -268,7 +279,6 @@ const zh: Record<string, string> = {
   "Quit reminder": "退出提醒",
   "Ask what to do when closing the window.": "关闭窗口时询问要最小化还是退出。",
   About: "关于",
-  "A worktree-centered desktop Git client.": "以 worktree 为中心的桌面 Git 客户端。",
   "Manage several repositories and all of their worktrees in one window: browse history and refs, review diffs and blame, run Git operations, and keep multi-tab terminals side by side.":
     "把多个仓库及其所有 worktree 收进一个窗口统一管理：浏览历史与引用、对比差异与追责、执行完整 Git 操作，并排开多标签终端。",
   "Check for updates": "检查更新",
@@ -291,6 +301,11 @@ const zh: Record<string, string> = {
   "Report an issue": "反馈问题",
   "MIT License": "MIT 许可证",
   "Copyright 2026 MyGit contributors.": "© 2026 MyGit contributors",
+  "Restore terminals": "恢复终端",
+  "MyGit was closed with these terminals open. Restore them, including their commands?":
+    "上次关闭 MyGit 时打开了这些终端。是否恢复它们（连同其中的命令）？",
+  "Don't restore": "不恢复",
+  Restore: "恢复",
 };
 const Language = createContext("zh-CN");
 export function LanguageProvider({

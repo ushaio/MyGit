@@ -62,9 +62,6 @@ func (s *AppService) ResolveClose(action string, remember bool) (workspace.State
 		return state, nil
 	}
 	s.forceClose.Store(true)
-	if s.app != nil {
-		s.app.Quit()
-	}
 	return state, nil
 }
 

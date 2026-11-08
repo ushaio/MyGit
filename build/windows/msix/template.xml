@@ -18,7 +18,7 @@
         PublisherName="CN=MyGit"
         PublisherDisplayName="MyGit"
         Version="0.1.0.0"
-        PackageDescription="A worktree-centered Git workspace">
+        PackageDescription="MyGit">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
@@ -26,7 +26,7 @@
         <Applications>
             <Application
                 Id="app.mygit.desktop"
-                Description="A worktree-centered Git workspace"
+                Description="MyGit"
                 DisplayName="MyGit"
                 ExecutableName="MyGit"
                 EntryPoint="Windows.FullTrustApplication">
@@ -43,7 +43,7 @@
             <Framework>false</Framework>
             <DisplayName>MyGit</DisplayName>
             <PublisherDisplayName>MyGit</PublisherDisplayName>
-            <Description>A worktree-centered Git workspace</Description>
+            <Description>MyGit</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>

@@ -28,7 +28,10 @@ export type {
     LineSelection,
     Repository,
     TerminalCommand,
+    TerminalCommandLists,
     TerminalOutput,
     TerminalProfile,
+    TerminalSessionLayout,
+    TerminalSessionState,
     UpdateInfo
 } from "./models.js";

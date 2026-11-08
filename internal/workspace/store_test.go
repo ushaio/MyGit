@@ -292,6 +292,85 @@ func TestProjectOrderPersistsAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestRepairGroupsAssignsMissingIDs(t *testing.T) {
+	dir := t.TempDir()
+	seed := `{"Version":1,"Roots":[],"Trees":[{"Path":"C:/work/repo","Repository":true}],"Groups":[{"ID":"","Name":"MO Gallery"},{"ID":"","Name":"Fork"}],"ProjectOrder":{"":["C:/work/repo"]}}`
+	if err := os.WriteFile(filepath.Join(dir, "workspace.json"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := s.Snapshot()
+	if len(st.Groups) != 2 {
+		t.Fatalf("groups: %+v", st.Groups)
+	}
+	ids := map[string]bool{}
+	for _, g := range st.Groups {
+		if g.ID == "" {
+			t.Fatalf("group %q kept an empty id", g.Name)
+		}
+		if ids[g.ID] {
+			t.Fatalf("duplicate group id %q", g.ID)
+		}
+		ids[g.ID] = true
+	}
+	if _, ok := st.ProjectOrder[""]; ok {
+		t.Fatalf("empty order scope survived: %+v", st.ProjectOrder)
+	}
+}
+
+func TestSetGroupAssignsAnIDWhenMissing(t *testing.T) {
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.SetGroup("", "Tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Groups) != 1 || st.Groups[0].ID == "" || st.Groups[0].Name != "Tools" {
+		t.Fatalf("groups: %+v", st.Groups)
+	}
+	if _, err := s.SetGroup("", ""); err != nil {
+		t.Fatalf("empty delete: %v", err)
+	}
+	if groups := s.Snapshot().Groups; len(groups) != 1 {
+		t.Fatalf("empty delete changed groups: %+v", groups)
+	}
+}
+
+func TestProjectJoinsOneKnownGroupOnly(t *testing.T) {
+	root := t.TempDir()
+	repository(t, root)
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetProject(root, "group", "missing"); err != nil {
+		t.Fatal(err)
+	}
+	if group := s.Projects()[0].Group; group != "" {
+		t.Fatalf("project joined unknown group %q", group)
+	}
+	if _, err := s.SetGroup("tools", "Tools"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetProject(root, "group", "tools"); err != nil {
+		t.Fatal(err)
+	}
+	if group := s.Projects()[0].Group; group != "tools" {
+		t.Fatalf("project group: %q", group)
+	}
+}
+
 func TestDataDirectoryHoldsTheWorkspaceFile(t *testing.T) {
 	config := t.TempDir()
 	s, err := NewStore(config)

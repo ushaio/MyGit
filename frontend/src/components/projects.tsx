@@ -66,24 +66,84 @@ function orderProjects(
   return [...ranked, ...list.filter((node) => !rank.has(node.Path))];
 }
 
+// PLATFORM_TABS names the code hosts that get their own sidebar tab, in tab
+// order. A host is only rendered while a project actually uses it.
+const PLATFORM_TABS = [
+  {
+    id: "github",
+    label: "GitHub",
+    icon: <Github className="size-3.5 shrink-0" />,
+  },
+  {
+    id: "gitee",
+    label: "Gitee",
+    icon: <GitFork className="size-3.5 shrink-0" />,
+  },
+  {
+    id: "gitcode",
+    label: "GitCode",
+    icon: <GitFork className="size-3.5 shrink-0" />,
+  },
+] as const;
+
+// projectSources lists every host a project is reachable on. Workspace files
+// and test fixtures saved before Sources existed only carry the preferred
+// Source, so fall back to it.
+function projectSources(node: ProjectNode): readonly string[] {
+  if (node.Sources?.length) return node.Sources;
+  return node.Source ? [node.Source] : [];
+}
+
 export function ProjectSidebar() {
   const w = useWorkbench(),
     t = useT();
   const [group, setGroup] = useState<{ id: string; name: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState("all");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dragPath, setDragPath] = useState("");
   const [dropPath, setDropPath] = useState("");
   const dragSource = useRef<{ path: string; scope: string } | null>(null);
+  // Platform tabs are derived, never stored: a host only gets a tab while at
+  // least one project has a remote on it, and a repository published on two
+  // hosts is listed under both of their tabs.
+  const platformTabs = PLATFORM_TABS.filter((platform) =>
+    w.projects.some((p) => projectSources(p).includes(platform.id)),
+  );
+  // A tab that just lost its last project falls back to the full list instead
+  // of leaving an empty pane behind.
+  const activeTab =
+    tab !== "all" && platformTabs.some((p) => p.id === tab) ? tab : "all";
+  const activePlatform = platformTabs.find((p) => p.id === activeTab);
+  // Searching is global: results ignore the selected tab so a project cannot
+  // hide behind a platform pane.
   const filtered = w.projects.filter((p) =>
-    `${basename(p.Path)} ${p.Path}`.toLowerCase().includes(query.toLowerCase()),
+    `${basename(p.Path)} ${p.Path}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
   );
   const pinnedProjects = orderProjects(
     w.projects.filter((p) => p.Pinned),
     "pinned",
     w.state?.ProjectOrder,
   );
+  // One aggregate list per platform, ordered under the platform id. It is
+  // independent of the custom groups: the same project can be listed here and
+  // under its group, Pinned, or in the ungrouped tree.
+  const platformProjects =
+    activeTab === "all"
+      ? []
+      : orderProjects(
+          w.projects.filter((p) => projectSources(p).includes(activeTab)),
+          activeTab,
+          w.state?.ProjectOrder,
+        );
+  const platformPaths = platformProjects.map((node) => node.Path);
+  // A group without an id cannot own projects: its empty id would match every
+  // ungrouped project and list it under several groups. The backend repairs
+  // such files on load; this keeps a stale reply from showing them again.
+  const groups = (w.state?.Groups || []).filter((g) => !!g.ID);
   const newGroup = () => setGroup({ id: crypto.randomUUID(), name: "" });
 
   function clearDrag() {
@@ -107,6 +167,7 @@ export function ProjectSidebar() {
   function projectRow(
     node: ProjectNode,
     reorder?: { scope: string; paths: string[] },
+    platform?: { icon: React.ReactNode },
   ) {
     const terminals = w.terminalsFor(node.Path);
     const open = !!expanded[node.Path];
@@ -160,7 +221,8 @@ export function ProjectSidebar() {
                 className="nav-project"
                 onClick={() => w.selectProject(node.Path)}
               >
-                {node.Source === "github" ? <Github /> : <GitFork />}
+                {platform?.icon ??
+                  (node.Source === "github" ? <Github /> : <GitFork />)}
                 <span className="truncate">{basename(node.Path)}</span>
               </button>
               {node.Pinned && (
@@ -216,7 +278,7 @@ export function ProjectSidebar() {
             </ContextMenuItem>
             <ContextMenuSub>
               <ContextMenuSubTrigger>
-                {t("Move to group")}
+                {t(platform ? "Set group" : "Move to group")}
               </ContextMenuSubTrigger>
               <ContextMenuSubContent>
                 <ContextMenuItem
@@ -226,7 +288,7 @@ export function ProjectSidebar() {
                 >
                   {t("Ungrouped")}
                 </ContextMenuItem>
-                {(w.state?.Groups || []).map((g) => (
+                {groups.map((g) => (
                   <ContextMenuItem
                     key={g.ID}
                     onSelect={() =>
@@ -368,12 +430,55 @@ export function ProjectSidebar() {
           <kbd className="ml-auto text-[10px]">⌘ K</kbd>
         </button>
       </div>
+      {!!platformTabs.length && (
+        <div className="sidebar-tabs" role="tablist" aria-label={t("Platforms")}>
+          <button
+            type="button"
+            role="tab"
+            className="sidebar-tab"
+            aria-selected={activeTab === "all"}
+            data-active={activeTab === "all"}
+            onClick={() => setTab("all")}
+          >
+            {t("All")}
+          </button>
+          {platformTabs.map((platform) => (
+            <button
+              key={platform.id}
+              type="button"
+              role="tab"
+              className="sidebar-tab"
+              aria-selected={activeTab === platform.id}
+              data-active={activeTab === platform.id}
+              onClick={() => setTab(platform.id)}
+            >
+              {platform.icon}
+              {platform.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {query ? (
           <>{filtered.map((p) => projectRow(p))}</>
+        ) : activeTab !== "all" ? (
+          <div className="pt-1">
+            {platformProjects.map((p) =>
+              projectRow(
+                p,
+                { scope: activeTab, paths: platformPaths },
+                activePlatform,
+              ),
+            )}
+          </div>
         ) : (
           <>
-            <Section title="Pinned" count={pinnedProjects.length}>
+            <Section
+              title="Pinned"
+              count={pinnedProjects.length}
+              defaultOpen={false}
+              storageKey="projects:pinned"
+            >
               {pinnedProjects.map((p) =>
                 projectRow(p, {
                   scope: "pinned",
@@ -381,14 +486,7 @@ export function ProjectSidebar() {
                 }),
               )}
             </Section>
-            <Section
-              title="Repositories"
-              count={w.projects.length}
-              defaultOpen={false}
-            >
-              {w.projects.map((p) => projectRow(p))}
-            </Section>
-            {(w.state?.Groups || []).map((g) => {
+            {groups.map((g) => {
               const members = orderProjects(
                 w.projects.filter((p) => p.Group === g.ID && !p.Pinned),
                 g.ID,
@@ -399,7 +497,12 @@ export function ProjectSidebar() {
                 <ContextMenu key={g.ID}>
                   <ContextMenuTrigger asChild>
                     <div>
-                      <Section title={g.Name} count={members.length}>
+                      <Section
+                        title={g.Name}
+                        count={members.length}
+                        defaultOpen={false}
+                        storageKey={`projects:group:${g.ID}`}
+                      >
                         {members.map((p) =>
                           projectRow(p, { scope: g.ID, paths }),
                         )}
@@ -426,6 +529,8 @@ export function ProjectSidebar() {
             })}
             <Section
               title="Ungrouped projects"
+              defaultOpen={false}
+              storageKey="projects:ungrouped"
               action={
                 <IconButton label="New group" onClick={newGroup}>
                   <Plus className="size-3" />

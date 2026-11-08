@@ -4,9 +4,13 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -44,7 +48,12 @@ func main() {
 		log.Fatal(err)
 	}
 	app := application.New(application.Options{
-		Name: "MyGit", Description: "A worktree-centered Git workspace",
+		Name: "MyGit", Description: "MyGit",
+		// Only one MyGit instance may run at a time. A second launch is refused
+		// by the platform lock and instead hands control back to the running
+		// instance via OnSecondInstanceLaunch: we restore its window to the
+		// foreground, then the second process exits (see Wails single_instance).
+		SingleInstance: probeSingleInstance(appService),
 		Services: []application.Service{
 			application.NewService(workspaceService),
 			application.NewService(repository),
@@ -55,6 +64,12 @@ func main() {
 		},
 		Assets: application.AssetOptions{Handler: application.AssetFileServerFS(frontend)},
 		Mac:    application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
+		// Wails v3.0.0 can crash inside the Go runtime's own exit path on
+		// Windows (wailsapp/wails#6375) and then hang as a zombie process with
+		// the window still on screen. Services, windows and trays are already
+		// torn down when PostShutdown runs, so end the process from there
+		// instead of returning from main and letting the runtime take that path.
+		PostShutdown: func() { os.Exit(0) },
 	})
 	desktop.Attach(app)
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -64,6 +79,63 @@ func main() {
 	})
 	appService.Attach(app, window)
 	workspaceService.AttachWindow(window)
+	// TEMPORARY quit-freeze probe. Remove once the hang is understood.
+	if addr := os.Getenv("MYGIT_PPROF"); addr != "" {
+		http.HandleFunc("/debug/quit", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("probe: /debug/quit")
+			go func() {
+				appService.Quit()
+				log.Println("probe: Quit returned")
+			}()
+			_, _ = w.Write([]byte("quitting\n"))
+		})
+		http.HandleFunc("/debug/quitmain", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("probe: /debug/quitmain")
+			application.InvokeSync(func() {
+				log.Println("probe: quitmain on main thread")
+				appService.Quit()
+				log.Println("probe: quitmain Quit returned")
+			})
+			_, _ = w.Write([]byte("quit on main thread\n"))
+		})
+		http.HandleFunc("/debug/hide", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("probe: /debug/hide")
+			window.Hide()
+			_, _ = w.Write([]byte("hidden\n"))
+		})
+		http.HandleFunc("/debug/minimise", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("probe: /debug/minimise")
+			window.Minimise()
+			_, _ = w.Write([]byte("minimised\n"))
+		})
+		http.HandleFunc("/debug/close", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("probe: /debug/close")
+			go func() {
+				window.Close()
+				log.Println("probe: Close returned")
+			}()
+			_, _ = w.Write([]byte("closing\n"))
+		})
+		http.HandleFunc("/debug/resolve", func(w http.ResponseWriter, r *http.Request) {
+			action := r.URL.Query().Get("action")
+			log.Println("probe: /debug/resolve", action)
+			go func() {
+				_, err := appService.ResolveClose(action, false)
+				log.Printf("probe: ResolveClose returned err=%v", err)
+			}()
+			_, _ = w.Write([]byte("resolving\n"))
+		})
+		go func() { log.Println("pprof:", http.ListenAndServe(addr, nil)) }()
+	}
+	if raw := os.Getenv("MYGIT_QUIT_AFTER"); raw != "" {
+		if ms, convErr := strconv.Atoi(raw); convErr == nil {
+			time.AfterFunc(time.Duration(ms)*time.Millisecond, func() {
+				log.Println("probe: quit timer fired")
+				appService.Quit()
+				log.Println("probe: Quit returned")
+			})
+		}
+	}
 	// The close button never destroys the window directly: depending on the
 	// saved preference it either asks the frontend, hides to the tray, or —
 	// when an explicit quit is in progress — lets the window close for real.
@@ -130,5 +202,19 @@ func main() {
 	app.Menu.Set(menu)
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// probeSingleInstance is TEMPORARY: lets the quit-freeze probe run alongside a
+// stuck instance. Remove with the rest of the probe code.
+func probeSingleInstance(appService *services.AppService) *application.SingleInstanceOptions {
+	if os.Getenv("MYGIT_NO_SINGLE") != "" {
+		return nil
+	}
+	return &application.SingleInstanceOptions{
+		UniqueID: "com.ushaio.mygit",
+		OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+			appService.ShowWindow()
+		},
 	}
 }

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, it, vi } from "vitest"
 import { ThemeProvider } from "@/lib/theme"
-import { Call, Events } from "@wailsio/runtime"
+import { Call, Events, Window } from "@wailsio/runtime"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { WorkbenchProvider } from "@/lib/workbench"
@@ -11,12 +11,13 @@ import { alpha, beta, createBackend, linked } from "./backend"
 
 vi.mock("@/components/terminal", () => ({ TerminalPane: () => null }))
 let backend: ReturnType<typeof createBackend>
-beforeEach(() => { backend = createBackend(); vi.mocked(Call.ByName).mockReset(); vi.mocked(Call.ByName).mockImplementation(backend.call as typeof Call.ByName) })
+beforeEach(() => { localStorage.clear(); backend = createBackend(); vi.mocked(Call.ByName).mockReset(); vi.mocked(Call.ByName).mockImplementation(backend.call as typeof Call.ByName); vi.mocked(Window.Close).mockClear() })
 function mount() { return render(<ThemeProvider attribute="class" forcedTheme="light"><TooltipProvider delayDuration={0}><WorkbenchProvider><App /></WorkbenchProvider><Toaster /></TooltipProvider></ThemeProvider>) }
 async function ready() { mount(); await screen.findByRole("button", { name: "Stage all" }); return userEvent.setup() }
 
 it("badges projects with open terminals and expands their terminal list", async () => {
   const user = await ready()
+  await user.click(screen.getByRole("button", { name: /Pinned/ }))
   const alphaRow = screen.getAllByRole("button", { name: "alpha" }).find((el) => el.classList.contains("nav-project"))!
   fireEvent.contextMenu(alphaRow, { button: 2, clientX: 120, clientY: 120 })
   await user.click(await screen.findByRole("menuitem", { name: "New terminal" }))
@@ -108,6 +109,7 @@ it("ignores a late response from a previously selected repository", async () => 
   vi.mocked(Call.ByName).mockImplementation(((name: string, ...args: unknown[]) => name.endsWith(".Snapshot") && args[0] === alpha ? delayed : backend.call(name, ...args)) as typeof Call.ByName)
   mount()
   const user = userEvent.setup()
+  await user.click(await screen.findByRole("button", { name: /Ungrouped projects/ }))
   await user.click(await screen.findByRole("button", { name: "beta" }))
   await screen.findByRole("textbox", { name: "Search history…" })
   await act(async () => { release(backend.snapshot(alpha)); await delayed })
@@ -169,7 +171,7 @@ it("checks for updates before offering the download", async () => {
   await user.click(within(dialog).getByRole("button", { name: "About" }))
   expect(within(dialog).getAllByText("v0.2.0").length).toBeGreaterThan(0)
   expect(
-    within(dialog).getByText("A worktree-centered desktop Git client."),
+    within(dialog).getByText(/Manage several repositories and all of their worktrees/),
   ).toBeInTheDocument()
   await user.click(
     within(dialog).getByRole("button", { name: "Check for updates" }),
@@ -226,7 +228,8 @@ it("reorders grouped projects by drag and drop and keeps the order", async () =>
   for (const child of backend.state.Trees?.[0]?.Children || []) {
     if (child) { child.Group = "g1"; child.Pinned = false }
   }
-  await ready()
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: /Group one/ }))
   const row = (name: string) => screen.getAllByRole("button", { name }).find((el) => el.classList.contains("nav-project"))!
   fireEvent.dragStart(row("beta"))
   fireEvent.dragOver(row("alpha"))
@@ -235,6 +238,77 @@ it("reorders grouped projects by drag and drop and keeps the order", async () =>
   // The rendered order follows the saved order.
   const labels = screen.getAllByRole("button").filter((el) => el.classList.contains("nav-project")).map((el) => el.textContent)
   expect(labels).toEqual(["beta", "alpha"])
+})
+it("turns platforms into tabs and lists a repository under each host it uses", async () => {
+  backend.state.Groups = [{ ID: "g1", Name: "Group one" }]
+  const children = backend.state.Trees?.[0]?.Children || []
+  const alphaNode = children.find((child) => child?.Path === alpha)!
+  const betaNode = children.find((child) => child?.Path === beta)!
+  alphaNode.Pinned = false
+  alphaNode.Source = "github"
+  alphaNode.Sources = ["github", "gitee"]
+  alphaNode.Group = "g1"
+  betaNode.Source = "github"
+  betaNode.Sources = ["github"]
+  const user = await ready()
+  // "All" keeps the groups and the ungrouped tree; the fixed GitHub section is
+  // gone, and a host tab only exists while a project uses it.
+  const tabs = screen.getAllByRole("tab").map((el) => el.textContent)
+  expect(tabs).toEqual(["All", "GitHub", "Gitee"])
+  await user.click(screen.getByRole("button", { name: /Group one/ }))
+  await user.click(screen.getByRole("button", { name: /Ungrouped projects/ }))
+  const listed = () =>
+    screen
+      .getAllByRole("button")
+      .filter((el) => el.classList.contains("nav-project"))
+      .map((el) => el.textContent)
+  expect(listed()).toEqual(["alpha", "beta"])
+
+  // GitHub aggregates the repositories whose sources include github.
+  await user.click(screen.getByRole("tab", { name: "GitHub" }))
+  expect(listed()).toEqual(["alpha", "beta"])
+  // Gitee lists only alpha, which is mirrored there as well.
+  await user.click(screen.getByRole("tab", { name: "Gitee" }))
+  expect(listed()).toEqual(["alpha"])
+  // Platform rows keep the full project menu, including grouping.
+  const row = screen
+    .getAllByRole("button", { name: "alpha" })
+    .find((el) => el.classList.contains("nav-project"))!
+  fireEvent.contextMenu(row, { button: 2, clientX: 120, clientY: 120 })
+  expect(
+    await screen.findByRole("menuitem", { name: "Set group" }),
+  ).toBeInTheDocument()
+})
+it("labels grouping as Move to group for plain projects", async () => {
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: /Ungrouped projects/ }))
+  const row = screen
+    .getAllByRole("button", { name: "beta" })
+    .find((el) => el.classList.contains("nav-project"))!
+  fireEvent.contextMenu(row, { button: 2, clientX: 120, clientY: 120 })
+  expect(
+    await screen.findByRole("menuitem", { name: "Move to group" }),
+  ).toBeInTheDocument()
+})
+it("never lists a project under two groups", async () => {
+  // Workspace files from older builds could hold groups without an id, and an
+  // empty id matched every ungrouped project in every such group.
+  backend.state.Groups = [
+    { ID: "", Name: "MO Gallery" },
+    { ID: "", Name: "Fork" },
+  ]
+  const children = backend.state.Trees?.[0]?.Children || []
+  children.forEach((child) => {
+    if (child) child.Pinned = false
+  })
+  const user = await ready()
+  await user.click(screen.getByRole("button", { name: /Ungrouped projects/ }))
+  const labels = screen
+    .getAllByRole("button")
+    .filter((el) => el.classList.contains("nav-project"))
+    .map((el) => el.textContent)
+  expect(labels).toEqual(["alpha", "beta"])
+  expect(screen.queryByText("MO Gallery")).not.toBeInTheDocument()
 })
 it("offers clone and add-folder from the sidebar add button", async () => {
   const user = await ready()
@@ -270,6 +344,7 @@ it("asks what closing should do and remembers the choice", async () => {
   await user.click(within(dialog).getByRole("checkbox", { name: "Remember my choice" }))
   await user.click(within(dialog).getByRole("button", { name: "Quit app" }))
   await waitFor(() => expect(Call.ByName).toHaveBeenCalledWith("mygit-wails3/internal/services.AppService.ResolveClose", "exit", true))
+  await waitFor(() => expect(Window.Close).toHaveBeenCalled())
   await waitFor(() => expect(backend.state.Preferences.CloseAction).toBe("exit"))
   expect(backend.state.Preferences.CloseConfirm).toBe(false)
 })
@@ -283,4 +358,29 @@ it("re-enables the quit reminder from settings", async () => {
   await user.click(checkbox)
   await user.click(within(dialog).getByRole("button", { name: "Save" }))
   await waitFor(() => expect(backend.state.Preferences.CloseConfirm).toBe(true))
+})
+it("starts every project section collapsed and restores the last open state", async () => {
+  const view = mount()
+  await screen.findByRole("button", { name: "Stage all" })
+  const user = userEvent.setup()
+  const navRows = () =>
+    screen
+      .queryAllByRole("button")
+      .filter((el) => el.classList.contains("nav-project"))
+      .map((el) => el.textContent)
+  expect(navRows()).toEqual([])
+  const pinned = screen.getByRole("button", { name: /Pinned/ })
+  expect(pinned).toHaveAttribute("data-state", "closed")
+
+  await user.click(pinned)
+  expect(pinned).toHaveAttribute("data-state", "open")
+  expect(navRows()).toEqual(["alpha"])
+  expect(localStorage.getItem("mygit:section:projects:pinned")).toBe("open")
+
+  // Opening the app again rebuilds the sidebar from the remembered state.
+  view.unmount()
+  mount()
+  await screen.findByRole("button", { name: "Stage all" })
+  expect(screen.getByRole("button", { name: /Pinned/ })).toHaveAttribute("data-state", "open")
+  expect(navRows()).toEqual(["alpha"])
 })

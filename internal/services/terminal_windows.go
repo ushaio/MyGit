@@ -1,13 +1,35 @@
 package services
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"time"
 )
 
-func configureTerminal(*exec.Cmd)      {}
-func stopTerminal(cmd *exec.Cmd) error { return cmd.Process.Kill() }
+func configureTerminal(*exec.Cmd) {}
+
+func stopTerminal(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	kill := exec.CommandContext(ctx, "taskkill.exe", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
+	hideConsole(kill)
+	if err := kill.Run(); err == nil {
+		return nil
+	}
+	// If taskkill is unavailable or cannot terminate the tree, still stop the
+	// shell. Its waiter closes the PTY off the UI thread after the shell exits.
+	if err := cmd.Process.Kill(); err != nil {
+		return err
+	}
+	return errors.New("taskkill failed to terminate the terminal process tree")
+}
 
 // terminalProfiles lists the shells commonly installed on Windows in the order
 // the sidebar shows them. Missing shells stay in the list so the UI can show

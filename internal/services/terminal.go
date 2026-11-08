@@ -33,8 +33,15 @@ type TerminalService struct {
 	commandsMu   sync.Mutex
 	commandsPath string
 	// commands holds the in-memory fallback (no data directory), keyed by
-	// project path.
+	// project path. common is the same fallback for shortcuts shared by every
+	// project.
 	commands map[string][]TerminalCommand
+	common   []TerminalCommand
+
+	// sessionMu guards the saved terminal layout written to
+	// terminal-sessions.json, the tabs offered for restore on the next launch.
+	sessionMu   sync.Mutex
+	sessionPath string
 }
 type TerminalOutput struct {
 	Data   string
@@ -68,12 +75,20 @@ type TerminalCommand struct {
 	Path string
 }
 
+// TerminalCommandLists is the pair the terminal sidebar shows: the selected
+// project's shortcuts and the general shortcuts shared by every project.
+type TerminalCommandLists struct {
+	Project []TerminalCommand
+	Common  []TerminalCommand
+}
+
 // terminalCommandFile is the on-disk shape. Projects maps a project path to its
 // own shortcut list, so the terminal command sidebar follows the selected
-// project. Commands is the pre-per-project layout; it is migrated into the
-// first project that reads it.
+// project. Common is the list shown in every project. Commands is the
+// pre-per-project layout; it is migrated into the first project that reads it.
 type terminalCommandFile struct {
 	Commands []TerminalCommand            `json:"Commands,omitempty"`
+	Common   []TerminalCommand            `json:"Common,omitempty"`
 	Projects map[string][]TerminalCommand `json:"Projects,omitempty"`
 }
 
@@ -86,6 +101,7 @@ func NewTerminalService(dir string) *TerminalService {
 	}
 	if dir != "" {
 		service.commandsPath = filepath.Join(dir, "terminal-commands.json")
+		service.sessionPath = filepath.Join(dir, "terminal-sessions.json")
 	}
 	return service
 }
@@ -129,6 +145,123 @@ func (s *TerminalService) SaveCommands(project string, commands []TerminalComman
 	if strings.TrimSpace(project) == "" {
 		return nil, errors.New("terminal commands require a project")
 	}
+	normalised, err := normaliseTerminalCommands(commands)
+	if err != nil {
+		return nil, err
+	}
+	s.commandsMu.Lock()
+	defer s.commandsMu.Unlock()
+	if err := s.writeCommands(project, normalised); err != nil {
+		return nil, err
+	}
+	return normalised, nil
+}
+
+// CommonCommands returns the general shortcuts shown in every project.
+func (s *TerminalService) CommonCommands() ([]TerminalCommand, error) {
+	s.commandsMu.Lock()
+	defer s.commandsMu.Unlock()
+	if s.commandsPath == "" {
+		return append([]TerminalCommand{}, s.common...), nil
+	}
+	file, err := s.readCommandFile()
+	if err != nil {
+		return nil, err
+	}
+	return append([]TerminalCommand{}, file.Common...), nil
+}
+
+// SaveCommonCommands validates and stores the full general shortcut list.
+func (s *TerminalService) SaveCommonCommands(commands []TerminalCommand) ([]TerminalCommand, error) {
+	normalised, err := normaliseTerminalCommands(commands)
+	if err != nil {
+		return nil, err
+	}
+	s.commandsMu.Lock()
+	defer s.commandsMu.Unlock()
+	if s.commandsPath == "" {
+		s.common = normalised
+		return normalised, nil
+	}
+	file, err := s.readCommandFile()
+	if err != nil {
+		return nil, err
+	}
+	file.Common = normalised
+	if err := s.writeCommandFile(file); err != nil {
+		return nil, err
+	}
+	return normalised, nil
+}
+
+// MoveCommand moves one shortcut between a project's list and the general
+// list. Both lists are rewritten in the same file write, so a move can never
+// leave the command in neither list (or in both).
+func (s *TerminalService) MoveCommand(project, id string, toCommon bool) (TerminalCommandLists, error) {
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return TerminalCommandLists{}, errors.New("terminal commands require a project")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return TerminalCommandLists{}, errors.New("terminal command id is required")
+	}
+	s.commandsMu.Lock()
+	defer s.commandsMu.Unlock()
+
+	projects := s.commands
+	common := s.common
+	var file terminalCommandFile
+	if s.commandsPath != "" {
+		loaded, err := s.readCommandFile()
+		if err != nil {
+			return TerminalCommandLists{}, err
+		}
+		file = loaded
+		projects = file.Projects
+		common = file.Common
+	}
+
+	from, to := projects[project], common
+	if !toCommon {
+		from, to = common, projects[project]
+	}
+	index := -1
+	for i := range from {
+		if from[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return TerminalCommandLists{}, errors.New("terminal command not found")
+	}
+	moved := from[index]
+	remaining := append(from[:index:index], from[index+1:]...)
+	next := append(to, moved)
+	if toCommon {
+		projects[project], common = remaining, next
+	} else {
+		common, projects[project] = remaining, next
+	}
+
+	if s.commandsPath == "" {
+		s.commands = projects
+		s.common = common
+	} else {
+		file.Projects = projects
+		file.Common = common
+		if err := s.writeCommandFile(file); err != nil {
+			return TerminalCommandLists{}, err
+		}
+	}
+	return TerminalCommandLists{
+		Project: append([]TerminalCommand{}, projects[project]...),
+		Common:  append([]TerminalCommand{}, common...),
+	}, nil
+}
+
+func normaliseTerminalCommands(commands []TerminalCommand) ([]TerminalCommand, error) {
 	if len(commands) > 100 {
 		return nil, errors.New("too many terminal commands")
 	}
@@ -155,11 +288,6 @@ func (s *TerminalService) SaveCommands(project string, commands []TerminalComman
 			command.ID = rand.Text()
 		}
 		normalised = append(normalised, command)
-	}
-	s.commandsMu.Lock()
-	defer s.commandsMu.Unlock()
-	if err := s.writeCommands(project, normalised); err != nil {
-		return nil, err
 	}
 	return normalised, nil
 }
@@ -379,7 +507,11 @@ func (s *TerminalService) Close(id string) error {
 		return nil
 	}
 	if session.cmd.Process != nil {
-		_ = stopTerminal(session.cmd)
+		if err := stopTerminal(session.cmd); err != nil {
+			// On Windows, closing a ConPTY with surviving child processes can
+			// block. The process waiter closes it after the shell exits.
+			return err
+		}
 	}
 	return session.closePty()
 }

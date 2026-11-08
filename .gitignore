@@ -10,3 +10,4 @@
 /frontend/playwright-report/
 *.syso
 .DS_Store
+/desktop/target/

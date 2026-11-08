@@ -1,7 +1,7 @@
 import type { Action, Commit, FileContent, FileRequest, ProjectNode, Repository, TerminalCommand, WorkspaceState } from "@/lib/api"
 
 export const alpha = "C:/Projects/alpha", beta = "C:/Projects/beta", linked = "C:/Worktrees/feature"
-function node(Path: string, Repository = false, Children: ProjectNode[] = []): ProjectNode { return { Path, Repository, Children, Bare: false, Open: true, Missing: false, Pinned: Path === alpha, Removed: false, Group: "", Root: !Repository, Icon: "", Source: "github" } }
+function node(Path: string, Repository = false, Children: ProjectNode[] = []): ProjectNode { return { Path, Repository, Children, Bare: false, Open: true, Missing: false, Pinned: Path === alpha, Removed: false, Group: "", Root: !Repository, Icon: "", Sources: [], Source: "" } }
 export function commit(Hash = "a".repeat(40), Subject = "Initial commit", Parents: string[] = []): Commit { return { Hash, Short: Hash.slice(0, 8), Parents, Refs: ["HEAD -> main"], Author: "Test Author", AuthorEmail: "test@example.com", Committer: "Test Author", CommitterEmail: "test@example.com", AuthorDate: "2026-01-01T00:00:00Z", CommitDate: "2026-01-01T00:00:00Z", CoAuthors: [], Subject, Body: "Commit description" } }
 export function createBackend() {
   const state: WorkspaceState = { Version: 1, Roots: ["C:/Projects"], Trees: [node("C:/Projects", false, [node(alpha, true), node(beta, true)])], Groups: [], Selected: alpha, Worktrees: {}, Drafts: {}, PinnedRefs: {}, AutoFetch: {}, ProjectOrder: {}, Preferences: { Theme: "light", Language: "en", Editor: "", Wrap: true, SidebarWidth: 232, DefaultView: "git", AIURL: "", AIKey: "", AIModel: "", AICommitPrompt: "", CloseAction: "minimize", CloseConfirm: true } }
@@ -11,7 +11,9 @@ export function createBackend() {
   let downloaded = 0
   const installed: string[] = []
   const terminals: string[] = [], closedTerminals: string[] = [], terminalShells: string[] = [], terminalWrites: string[] = []
+  const lastSession: { Tabs: { Project?: string; Path?: string; Label?: string; Profile?: string; Command?: string }[]; Active: number; Page: string } = { Tabs: [], Active: -1, Page: "git" }
   let terminalCommands: Record<string, TerminalCommand[]> = {}
+  let commonTerminalCommands: TerminalCommand[] = []
   function snapshot(path: string): Repository { return { Path: path, Bare: false, Changes: { Top: path, From: "a".repeat(40), To: "", Files: path === beta ? [] : [{ ...file }] }, Refs: { Branches: [{ Name: "main", Hash: "a".repeat(40), Upstream: { Remote: "origin", Branch: "main" }, Ahead: 0, Behind: 0 }], Remotes: [], Tags: [] }, Tracking: { Branch: path === linked ? "feature" : "main", Upstream: "origin/main", Ahead: 0, Behind: 0 }, Worktrees: [{ Path: alpha, Branch: "main", HEAD: "a".repeat(40), Main: true, Bare: false, Detached: false, Locked: false, Prunable: false }, { Path: linked, Branch: "feature", HEAD: "b".repeat(40), Main: false, Bare: false, Detached: false, Locked: false, Prunable: false }], Stashes: [], Remotes: { origin: "https://github.com/example/alpha.git" }, Operation: { Kind: 0 } } }
   function content(req: FileRequest): FileContent { return { File: { ...file, Area: req.Area }, Before: "package old\n", After: "package new\n", Token: "file-version", Lines: [{ Kind: "delete", Text: "package old\n", Old: 1, New: 0 }, { Kind: "add", Text: "package new\n", Old: 0, New: 1 }], Binary: false, Truncated: false, BeforeImage: "", AfterImage: "" } }
   async function call(name: string, ...args: unknown[]): Promise<unknown> {
@@ -70,9 +72,43 @@ export function createBackend() {
         terminalCommands[project] = saved
         return structuredClone(saved)
       }
+      case "CommonCommands": return structuredClone(commonTerminalCommands)
+      case "SaveCommonCommands": {
+        const saved = (args[0] as TerminalCommand[]).map((command, index) => ({ ...command, ID: command.ID || `common-${index + 1}` }))
+        commonTerminalCommands = saved
+        return structuredClone(saved)
+      }
+      case "MoveCommand": {
+        const project = args[0] as string, id = args[1] as string, toCommon = args[2] as boolean
+        const projectList = terminalCommands[project] || []
+        if (toCommon) {
+          const moved = projectList.find((command) => command.ID === id)
+          if (!moved) throw new Error("terminal command not found")
+          terminalCommands[project] = projectList.filter((command) => command.ID !== id)
+          commonTerminalCommands = [...commonTerminalCommands, moved]
+        } else {
+          const moved = commonTerminalCommands.find((command) => command.ID === id)
+          if (!moved) throw new Error("terminal command not found")
+          commonTerminalCommands = commonTerminalCommands.filter((command) => command.ID !== id)
+          terminalCommands[project] = [...projectList, moved]
+        }
+        return {
+          Project: structuredClone(terminalCommands[project] || []),
+          Common: structuredClone(commonTerminalCommands),
+        }
+      }
       case "Write": terminalWrites.push(args[1] as string); return
       case "Resize": return
       case "Close": closedTerminals.push(args[0] as string); return
+      case "LastSession": return structuredClone(lastSession)
+      case "SaveSession": {
+        const layout = args[0] as { Tabs?: unknown[]; Active?: number; Page?: string }
+        lastSession.Tabs = structuredClone(layout.Tabs || []) as typeof lastSession.Tabs
+        lastSession.Active = layout.Active ?? -1
+        lastSession.Page = layout.Page || ""
+        return
+      }
+      case "ClearSession": lastSession.Tabs = []; lastSession.Active = -1; lastSession.Page = ""; return
       case "RebasePlan": return [commit()]
       case "OpenPath": opened.push(args[0] as string); return
       case "OpenURL": openedUrls.push(args[0] as string); return
@@ -83,5 +119,5 @@ export function createBackend() {
       default: throw new Error(`Unhandled test call ${name}`)
     }
   }
-  return { state, call, writes, copied, selections, opened, openedUrls, checkUpdateResult, get downloaded() { return downloaded }, installed, terminals, closedTerminals, terminalShells, terminalWrites, get terminalCommands() { return terminalCommands[alpha] || [] }, snapshot, content }
+  return { state, call, writes, copied, selections, opened, openedUrls, checkUpdateResult, get downloaded() { return downloaded }, installed, terminals, closedTerminals, terminalShells, terminalWrites, lastSession, get terminalCommands() { return terminalCommands[alpha] || [] }, get commonTerminalCommands() { return commonTerminalCommands }, snapshot, content }
 }

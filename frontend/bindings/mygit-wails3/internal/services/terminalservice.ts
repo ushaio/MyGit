@@ -9,6 +9,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+/**
+ * ClearSession forgets the saved terminals, used when the user declines to
+ * restore them.
+ */
+export function ClearSession(): $CancellablePromise<void> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.ClearSession");
+}
+
 export function Close(id: string): $CancellablePromise<void> {
     return $Call.ByName("mygit-wails3/internal/services.TerminalService.Close", id);
 }
@@ -18,6 +26,30 @@ export function Close(id: string): $CancellablePromise<void> {
  */
 export function Commands(project: string): $CancellablePromise<$models.TerminalCommand[] | null> {
     return $Call.ByName("mygit-wails3/internal/services.TerminalService.Commands", project);
+}
+
+/**
+ * CommonCommands returns the general shortcuts shown in every project.
+ */
+export function CommonCommands(): $CancellablePromise<$models.TerminalCommand[] | null> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.CommonCommands");
+}
+
+/**
+ * LastSession returns the terminals saved when the app last closed. An empty
+ * layout (no tabs) means there is nothing to offer for restore.
+ */
+export function LastSession(): $CancellablePromise<$models.TerminalSessionLayout> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.LastSession");
+}
+
+/**
+ * MoveCommand moves one shortcut between a project's list and the general
+ * list. Both lists are rewritten in the same file write, so a move can never
+ * leave the command in neither list (or in both).
+ */
+export function MoveCommand(project: string, id: string, toCommon: boolean): $CancellablePromise<$models.TerminalCommandLists> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.MoveCommand", project, id, toCommon);
 }
 
 /**
@@ -43,6 +75,21 @@ export function Resize(id: string, columns: number, rows: number): $CancellableP
  */
 export function SaveCommands(project: string, commands: $models.TerminalCommand[] | null): $CancellablePromise<$models.TerminalCommand[] | null> {
     return $Call.ByName("mygit-wails3/internal/services.TerminalService.SaveCommands", project, commands);
+}
+
+/**
+ * SaveCommonCommands validates and stores the full general shortcut list.
+ */
+export function SaveCommonCommands(commands: $models.TerminalCommand[] | null): $CancellablePromise<$models.TerminalCommand[] | null> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.SaveCommonCommands", commands);
+}
+
+/**
+ * SaveSession stores the open terminals so the next launch can offer to restore
+ * them. An empty layout clears the file instead of leaving a stale one behind.
+ */
+export function SaveSession(layout: $models.TerminalSessionLayout): $CancellablePromise<void> {
+    return $Call.ByName("mygit-wails3/internal/services.TerminalService.SaveSession", layout);
 }
 
 export function Start(path: string, columns: number, rows: number, profile: string): $CancellablePromise<string> {

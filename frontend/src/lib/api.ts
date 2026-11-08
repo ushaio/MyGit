@@ -18,6 +18,8 @@ export type {
   LineSelection,
   TerminalCommand,
   TerminalProfile,
+  TerminalSessionLayout,
+  TerminalSessionState,
   UpdateInfo,
 } from "../../bindings/mygit-wails3/internal/services/models";
 export type {

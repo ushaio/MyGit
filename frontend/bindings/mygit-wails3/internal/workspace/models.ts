@@ -93,9 +93,12 @@ export interface projectNode {
     "Icon": string;
 
     /**
-     * Source names the code host a repository's remote points at, so a
-     * project without a chosen icon leads with that host's mark.
+     * Sources lists every code host the repository's remotes point at: one
+     * repository may be published on GitHub and Gitee at once, so the sidebar
+     * lists it under each platform's tab. Source names the preferred remote's
+     * host, so a project without a chosen icon leads with that host's mark.
      */
+    "Sources": string[] | null;
     "Source": string;
     "Children": (projectNode | null)[] | null;
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertCircle, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useT } from "@/lib/i18n";
+import { rememberSectionOpen, storedSectionOpen } from "@/lib/sections";
 
 export function IconButton({
   label,
@@ -88,20 +89,36 @@ export function Section({
   count,
   children,
   action,
+  icon,
   defaultOpen = true,
+  storageKey,
 }: {
   title: string;
   count?: number;
   children: ReactNode;
   action?: ReactNode;
+  icon?: ReactNode;
   defaultOpen?: boolean;
+  // storageKey remembers the open state across restarts; without it the
+  // section is uncontrolled and only follows defaultOpen.
+  storageKey?: string;
 }) {
   const t = useT();
+  const [initialOpen] = useState(() =>
+    storageKey ? storedSectionOpen(storageKey, defaultOpen) : defaultOpen,
+  );
   return (
-    <Collapsible defaultOpen={defaultOpen} className="group/section">
+    <Collapsible
+      defaultOpen={initialOpen}
+      onOpenChange={(open) => {
+        if (storageKey) rememberSectionOpen(storageKey, open);
+      }}
+      className="group/section"
+    >
       <div className="section-title">
         <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1 text-left">
           <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]/section:rotate-90" />
+          {icon}
           <span className="truncate">{t(title)}</span>
           {count !== undefined && (
             <span className="ml-auto text-[10px] font-normal tabular-nums">

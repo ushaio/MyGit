@@ -22,6 +22,7 @@ import {
   type LineSelection,
   type TerminalCommand,
   type TerminalProfile,
+  type TerminalSessionLayout,
   type WorkspaceState,
 } from "./api";
 import { basename, errorMessage } from "./utils";
@@ -46,6 +47,7 @@ export type TerminalTab = {
   label: string;
   profile: string;
   shell: string;
+  command: string;
 };
 type Workbench = {
   state: WorkspaceState | null;
@@ -66,10 +68,14 @@ type Workbench = {
   setPalette: (value: boolean) => void;
   page: "git" | "terminal";
   setPage: (value: "git" | "terminal") => void;
+  restorePrompt: TerminalSessionLayout | null;
+  restoreTerminals: () => Promise<void>;
+  dismissRestore: () => void;
   terminals: TerminalTab[];
   activeTerminal: string;
   profiles: TerminalProfile[] | null;
   commands: TerminalCommand[];
+  commonCommands: TerminalCommand[];
   terminalsFor: (project: string) => TerminalTab[];
   showTerminal: () => void;
   openTerminal: (
@@ -81,11 +87,13 @@ type Workbench = {
   ) => void;
   runCommand: (command: TerminalCommand) => void;
   saveCommands: (commands: TerminalCommand[]) => Promise<boolean>;
+  saveCommonCommands: (commands: TerminalCommand[]) => Promise<boolean>;
+  moveCommand: (id: string, toCommon: boolean) => Promise<void>;
   activateTerminal: (tab: TerminalTab) => void;
   closeTerminal: (id: string) => Promise<void>;
   closeOtherTerminals: (id: string) => Promise<void>;
   moveTerminal: (source: string, target: string) => void;
-  update: (operation: Promise<WorkspaceState>) => Promise<void>;
+  update: (operation: Promise<WorkspaceState>) => Promise<boolean>;
   selectProject: (path: string) => void;
   selectWorktree: (path: string) => void;
   refresh: () => void;
@@ -169,6 +177,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const activeByProject = useRef<Record<string, string>>({});
   const [profiles, setProfiles] = useState<TerminalProfile[] | null>(null);
   const [commands, setCommands] = useState<TerminalCommand[]>([]);
+  // General commands belong to no project, so they are loaded once and kept
+  // while the selected project changes.
+  const [commonCommands, setCommonCommands] = useState<TerminalCommand[]>([]);
+  // restorePrompt holds the saved layout while the startup dialog asks whether
+  // to restore it; sessionHydrated turns true once that question is settled, so
+  // the persistence effect only runs after the user has decided.
+  const [restorePrompt, setRestorePrompt] =
+    useState<TerminalSessionLayout | null>(null);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const restoreChecked = useRef(false);
+  const restoring = useRef(false);
   const projects = useMemo(() => collectProjects(state), [state]);
   const project = projects.some((p) => p.Path === state?.Selected)
     ? state!.Selected
@@ -198,11 +217,42 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       .then((value) => {
         if (alive) setProfiles(value || []);
       })
-      .catch(() => {});
+      .catch(() => {
+        // A shell-less machine still needs a settled profile list so the app can
+        // stop waiting to decide about restoring terminals.
+        if (alive) setProfiles([]);
+      });
     return () => {
       alive = false;
     };
   }, []);
+  // Ask the backend what terminals were open at the last close. When a layout
+  // exists, hold the app on the restore prompt until the user decides;
+  // otherwise mark the session settled so the default view can take over.
+  useEffect(() => {
+    if (restoreChecked.current) return;
+    if (!state || profiles === null) return;
+    restoreChecked.current = true;
+    let alive = true;
+    Term.LastSession()
+      .then((layout) => {
+        if (!alive) return;
+        const tabs = (layout?.Tabs || []).filter(
+          (tab) => tab.Path || tab.Project,
+        );
+        if (tabs.length) {
+          setRestorePrompt({ ...layout, Tabs: tabs });
+        } else {
+          setSessionHydrated(true);
+        }
+      })
+      .catch(() => {
+        if (alive) setSessionHydrated(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [state, profiles]);
   // Shortcut commands are per project, so reload them whenever the selected
   // project changes and clear them until the new list arrives.
   useEffect(() => {
@@ -223,12 +273,28 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       alive = false;
     };
   }, [project]);
+  // General commands are shared by every project, so load them once.
+  useEffect(() => {
+    let alive = true;
+    Term.CommonCommands()
+      .then((value) => {
+        if (alive) setCommonCommands(value || []);
+      })
+      .catch((error) => {
+        if (alive) toast.error(errorMessage(error));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const update = useCallback(async (operation: Promise<WorkspaceState>) => {
     try {
       setState(await operation);
+      return true;
     } catch (error) {
       toast.error(errorMessage(error));
+      return false;
     }
   }, []);
   const scan = useCallback(async () => {
@@ -356,6 +422,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
               label,
               profile: shell?.ID || profile,
               shell: shell?.Label || "",
+              command,
             },
           ];
         });
@@ -396,6 +463,33 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     },
     [project],
   );
+  const saveCommonCommands = useCallback(
+    async (next: TerminalCommand[]) => {
+      try {
+        setCommonCommands((await Term.SaveCommonCommands(next)) || []);
+        return true;
+      } catch (error) {
+        toast.error(errorMessage(error));
+        return false;
+      }
+    },
+    [],
+  );
+  // A move rewrites both lists in one backend write, so a failure leaves the
+  // command where it was instead of dropping it from both sides.
+  const moveCommand = useCallback(
+    async (id: string, toCommon: boolean) => {
+      if (!project) return;
+      try {
+        const lists = await Term.MoveCommand(project, id, toCommon);
+        setCommands(lists.Project || []);
+        setCommonCommands(lists.Common || []);
+      } catch (error) {
+        toast.error(errorMessage(error));
+      }
+    },
+    [project],
+  );
   const terminalsFor = useCallback(
     (projectPath: string) =>
       terminals.filter((tab) => tab.project === projectPath),
@@ -422,7 +516,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   // never overrides the tab again afterwards (the ref latches after one run).
   const defaultViewApplied = useRef(false);
   useEffect(() => {
-    if (defaultViewApplied.current || !state) return;
+    if (defaultViewApplied.current || !state || !sessionHydrated) return;
     if (state.Preferences.DefaultView !== "terminal") {
       defaultViewApplied.current = true;
       return;
@@ -432,7 +526,110 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setPage("terminal");
     if (!terminalsRef.current.some((tab) => tab.project === project))
       void openTerminal(project);
-  }, [state, profiles, project, openTerminal]);
+  }, [state, profiles, project, openTerminal, sessionHydrated]);
+  // Reopen the terminals saved at the last close: start each shell again in the
+  // same folder, replay its command, then bring back the active tab and page. A
+  // tab whose folder is gone or whose shell is unavailable is skipped (retrying
+  // with the default shell) instead of aborting the whole restore.
+  const restoreTerminals = useCallback(async () => {
+    const layout = restorePrompt;
+    defaultViewApplied.current = true;
+    setRestorePrompt(null);
+    if (!layout) {
+      setSessionHydrated(true);
+      return;
+    }
+    restoring.current = true;
+    try {
+      const created: TerminalTab[] = [];
+      const saved = layout.Tabs || [];
+      let activeId = "";
+      let activeSeen = false;
+      for (let index = 0; index < saved.length; index += 1) {
+        const item = saved[index];
+        const projectPath = item.Project || "";
+        const cwd =
+          item.Path ||
+          (projectPath ? state?.Worktrees?.[projectPath] || projectPath : "");
+        if (!cwd) continue;
+        let id: string;
+        try {
+          id = await Term.Start(cwd, 100, 30, item.Profile || "");
+        } catch {
+          try {
+            id = await Term.Start(cwd, 100, 30, "");
+          } catch {
+            continue;
+          }
+        }
+        const shell = (profiles ?? []).find(
+          (entry) => entry.ID === (item.Profile || ""),
+        );
+        const base = item.Label?.trim() || basename(cwd);
+        const taken = new Set(
+          created
+            .filter((tab) => tab.project === projectPath)
+            .map((tab) => tab.label),
+        );
+        let label = base;
+        for (let n = 2; taken.has(label); n += 1) label = `${base} ${n}`;
+        created.push({
+          id,
+          path: cwd,
+          project: projectPath,
+          label,
+          profile: shell?.ID || item.Profile || "",
+          shell: shell?.Label || "",
+          command: item.Command || "",
+        });
+        if (item.Command) void report(Term.Write(id, `${item.Command}\r`));
+        if (index === layout.Active) {
+          activeId = id;
+          activeSeen = true;
+        }
+      }
+      setTerminals(created);
+      for (const tab of created) activeByProject.current[tab.project] = tab.id;
+      const activeTab = activeSeen
+        ? created.find((tab) => tab.id === activeId)
+        : created.filter((tab) => tab.project === project).at(-1);
+      setActiveTerminal(activeTab?.id || "");
+      setPage(layout.Page === "git" ? "git" : "terminal");
+      if (activeTab?.project && activeTab.project !== project)
+        selectProject(activeTab.project);
+    } finally {
+      restoring.current = false;
+      setSessionHydrated(true);
+    }
+  }, [restorePrompt, project, state, profiles, selectProject]);
+  // Declining the restore starts a clean session; the default view still applies
+  // afterwards, so a "terminal" default opens a fresh shell.
+  const dismissRestore = useCallback(() => {
+    setRestorePrompt(null);
+    setSessionHydrated(true);
+    void report(Term.ClearSession());
+  }, []);
+  // Persist the open terminals so the next launch can offer to restore them.
+  // Wait until the restore question is settled so an empty start cannot wipe a
+  // saved layout, and skip while a restore is still spawning shells.
+  useEffect(() => {
+    if (!sessionHydrated || restoring.current) return;
+    const layout: TerminalSessionLayout = {
+      Tabs: terminals.map((tab) => ({
+        Project: tab.project,
+        Path: tab.path,
+        Label: tab.label,
+        Profile: tab.profile,
+        Command: tab.command || "",
+      })),
+      Active: terminals.findIndex((tab) => tab.id === activeTerminal),
+      Page: page,
+    };
+    const handle = window.setTimeout(() => {
+      void Term.SaveSession(layout).catch(() => {});
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [terminals, activeTerminal, page, sessionHydrated]);
   const closeTerminal = useCallback(
     async (id: string) => {
       try {
@@ -657,15 +854,21 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setPalette,
     page,
     setPage,
+    restorePrompt,
+    restoreTerminals,
+    dismissRestore,
     terminals,
     activeTerminal,
     profiles,
     commands,
+    commonCommands,
     terminalsFor,
     showTerminal,
     openTerminal,
     runCommand,
     saveCommands,
+    saveCommonCommands,
+    moveCommand,
     activateTerminal,
     closeTerminal,
     closeOtherTerminals,

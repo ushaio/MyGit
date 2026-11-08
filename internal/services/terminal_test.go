@@ -1,9 +1,33 @@
 package services
 
 import (
+	"runtime"
 	"testing"
 	"time"
 )
+
+func TestCloseKillsWindowsTerminalProcessTree(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows ConPTY process-tree behavior")
+	}
+	service := NewTerminalService("")
+	id, err := service.Start(t.TempDir(), 80, 24, "powershell")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Write(id, "ping -t 127.0.0.1\r"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+
+	start := time.Now()
+	if err := service.Close(id); err != nil {
+		t.Fatalf("close terminal: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("close took too long with an attached child process: %v", elapsed)
+	}
+}
 
 func TestTerminalProfilesHaveOneAvailableDefault(t *testing.T) {
 	profiles := NewTerminalService("").Profiles()
@@ -102,6 +126,104 @@ func TestTerminalCommandsWithoutStoreStayInMemory(t *testing.T) {
 	commands, err := service.Commands(project)
 	if err != nil || len(commands) != 1 {
 		t.Fatalf("expected one in-memory command, got %#v (%v)", commands, err)
+	}
+}
+
+func TestTerminalCommonCommandsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	service := NewTerminalService(dir)
+	stored, err := service.SaveCommonCommands([]TerminalCommand{
+		{Label: "  Log  ", Command: " git log --oneline ", Path: " "},
+	})
+	if err != nil {
+		t.Fatalf("save common commands: %v", err)
+	}
+	if len(stored) != 1 || stored[0].ID == "" || stored[0].Label != "Log" || stored[0].Path != "" {
+		t.Fatalf("unexpected normalised common commands: %#v", stored)
+	}
+	reloaded, err := NewTerminalService(dir).CommonCommands()
+	if err != nil {
+		t.Fatalf("load common commands: %v", err)
+	}
+	if len(reloaded) != 1 || reloaded[0].ID != stored[0].ID {
+		t.Fatalf("unexpected reloaded common commands: %#v", reloaded)
+	}
+	// General commands are not tied to a project: another project sees them too.
+	other, err := NewTerminalService(dir).Commands("C:/projects/beta")
+	if err != nil {
+		t.Fatalf("load project commands: %v", err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("expected the project list to stay empty, got %#v", other)
+	}
+}
+
+func TestMoveTerminalCommandBetweenLists(t *testing.T) {
+	dir := t.TempDir()
+	project := "C:/projects/alpha"
+	service := NewTerminalService(dir)
+	saved, err := service.SaveCommands(project, []TerminalCommand{{Label: "Dev", Command: "npm run dev"}})
+	if err != nil {
+		t.Fatalf("save project commands: %v", err)
+	}
+	id := saved[0].ID
+
+	lists, err := service.MoveCommand(project, id, true)
+	if err != nil {
+		t.Fatalf("move command to common: %v", err)
+	}
+	if len(lists.Project) != 0 || len(lists.Common) != 1 || lists.Common[0].ID != id {
+		t.Fatalf("unexpected lists after moving to common: %#v", lists)
+	}
+	// The move is persisted for every project, not just this one.
+	reloaded, err := NewTerminalService(dir).CommonCommands()
+	if err != nil || len(reloaded) != 1 || reloaded[0].ID != id {
+		t.Fatalf("expected the command in the persisted common list, got %#v (%v)", reloaded, err)
+	}
+	if project, err := NewTerminalService(dir).Commands(project); err != nil || len(project) != 0 {
+		t.Fatalf("expected the persisted project list to be empty, got %#v (%v)", project, err)
+	}
+
+	lists, err = service.MoveCommand(project, id, false)
+	if err != nil {
+		t.Fatalf("move command back to project: %v", err)
+	}
+	if len(lists.Common) != 0 || len(lists.Project) != 1 || lists.Project[0].ID != id {
+		t.Fatalf("unexpected lists after moving back: %#v", lists)
+	}
+}
+
+func TestMoveTerminalCommandRejectsUnknown(t *testing.T) {
+	service := NewTerminalService("")
+	project := "C:/projects/alpha"
+	if _, err := service.SaveCommands(project, []TerminalCommand{{Label: "Dev", Command: "npm run dev"}}); err != nil {
+		t.Fatalf("save project commands: %v", err)
+	}
+	if _, err := service.MoveCommand(project, "missing", true); err == nil {
+		t.Fatal("expected an unknown command id to be rejected")
+	}
+	if _, err := service.MoveCommand("", "missing", true); err == nil {
+		t.Fatal("expected a missing project to be rejected")
+	}
+}
+
+func TestMoveTerminalCommandWithoutStoreStaysInMemory(t *testing.T) {
+	service := NewTerminalService("")
+	project := "C:/projects/alpha"
+	saved, err := service.SaveCommands(project, []TerminalCommand{{Label: "Dev", Command: "npm run dev"}})
+	if err != nil {
+		t.Fatalf("save project commands: %v", err)
+	}
+	if _, err := service.MoveCommand(project, saved[0].ID, true); err != nil {
+		t.Fatalf("move in-memory command: %v", err)
+	}
+	common, err := service.CommonCommands()
+	if err != nil || len(common) != 1 {
+		t.Fatalf("expected one in-memory common command, got %#v (%v)", common, err)
+	}
+	projectList, err := service.Commands(project)
+	if err != nil || len(projectList) != 0 {
+		t.Fatalf("expected the in-memory project list to be empty, got %#v (%v)", projectList, err)
 	}
 }
 

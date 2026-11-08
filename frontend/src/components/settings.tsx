@@ -522,9 +522,6 @@ export function SettingsDialog() {
                     v{APP_VERSION}
                   </span>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  {t("A worktree-centered desktop Git client.")}
-                </p>
               </div>
             </div>
             <p className="text-[11px] leading-relaxed text-muted-foreground">

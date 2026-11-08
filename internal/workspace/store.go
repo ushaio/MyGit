@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Node and Worktree are transport types shared by the Wails service.
@@ -113,7 +116,54 @@ func NewStore(dir string) (*Store, error) {
 	if s.state.Preferences.DefaultView != "git" && s.state.Preferences.DefaultView != "terminal" {
 		s.state.Preferences.DefaultView = "git"
 	}
+	repairGroups(&s.state)
 	return s, nil
+}
+
+// groupID names a new sidebar group. Ids are opaque to the store: the UI
+// generates them, so two groups only collide when a workspace file was written
+// by a build that saved none.
+func groupID() string {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Sprintf("group-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(raw[:])
+}
+
+// repairGroups heals workspace files written by builds that saved a group
+// without an id. Two such groups shared the empty id, and the sidebar matches a
+// section with node.Group == group.ID, so every ungrouped project was listed
+// under both of them. The invalid groups get fresh ids; their projects stay
+// ungrouped because the file cannot say which of the two owned them.
+func repairGroups(st *State) {
+	if len(st.Groups) > 0 {
+		seen := map[string]bool{}
+		next := make([]Group, 0, len(st.Groups))
+		for _, g := range st.Groups {
+			if g.ID == "" || seen[g.ID] {
+				g.ID = groupID()
+			}
+			seen[g.ID] = true
+			next = append(next, g)
+		}
+		st.Groups = next
+	}
+	// The empty scope belonged to the invalid group; nothing can order it.
+	delete(st.ProjectOrder, "")
+	// One project belongs to at most one group. A path stored twice (nested
+	// roots) must not disagree with itself, so the first membership wins.
+	owners := map[string]string{}
+	walk(st.Trees, func(n *Node) {
+		if n.Group == "" {
+			return
+		}
+		if owner, ok := owners[n.Path]; ok {
+			n.Group = owner
+			return
+		}
+		owners[n.Path] = n.Group
+	})
 }
 
 // Dir names the folder that holds the workspace file, so the app can show the
@@ -218,12 +268,16 @@ func walk(nodes []*Node, visit func(*Node)) {
 func (s *Store) Projects() []*Node {
 	st := s.Snapshot()
 	var projects []*Node
+	seen := map[string]bool{}
 	for _, tree := range st.Trees {
 		if tree == nil || !slices.Contains(st.Roots, tree.Path) {
 			continue
 		}
 		walk([]*Node{tree}, func(node *Node) {
-			if node.Repository && !node.Removed {
+			// Nested roots can find the same repository twice; the sidebar
+			// lists a project once per path.
+			if node.Repository && !node.Removed && !seen[node.Path] {
+				seen[node.Path] = true
 				projects = append(projects, node)
 			}
 		})
@@ -316,6 +370,12 @@ func (s *Store) SetProject(path, property, value string) (State, error) {
 			case "removed":
 				n.Removed = value == "true"
 			case "group":
+				// A project belongs to one group or none. A membership that
+				// names a group nobody can render would make the project
+				// disappear, so fall back to the ungrouped tree.
+				if value != "" && !slices.ContainsFunc(st.Groups, func(g Group) bool { return g.ID == value }) {
+					value = ""
+				}
 				n.Group = value
 			case "open":
 				n.Open = value == "true"
@@ -355,6 +415,15 @@ func (s *Store) SetProjectOrder(scope string, paths []string) (State, error) {
 	})
 }
 func (s *Store) SetGroup(id, name string) (State, error) {
+	if id == "" {
+		// Creating a group without an id used to save a group that matched
+		// every ungrouped project. Generate the id here instead of refusing,
+		// so an older UI still gets a usable group.
+		if name == "" {
+			return s.Snapshot(), nil
+		}
+		id = groupID()
+	}
 	return s.update(func(st *State) error {
 		index := slices.IndexFunc(st.Groups, func(g Group) bool { return g.ID == id })
 		if name == "" {

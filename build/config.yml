@@ -4,9 +4,9 @@ info:
   companyName: MyGit
   productName: MyGit
   productIdentifier: app.mygit.desktop
-  description: A worktree-centered Git workspace
+  description: MyGit
   copyright: Copyright 2026 MyGit contributors
-  version: 0.2.0
+  version: 0.3.0
 
 dev_mode:
   root_path: .

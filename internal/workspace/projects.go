@@ -26,9 +26,12 @@ type projectNode struct {
 	Root bool `yaml:"-"`
 	// Icon is the path of the image the user chose for a repository.
 	Icon string `yaml:"icon,omitempty"`
-	// Source names the code host a repository's remote points at, so a
-	// project without a chosen icon leads with that host's mark.
-	Source    string `yaml:"source,omitempty"`
+	// Sources lists every code host the repository's remotes point at: one
+	// repository may be published on GitHub and Gitee at once, so the sidebar
+	// lists it under each platform's tab. Source names the preferred remote's
+	// host, so a project without a chosen icon leads with that host's mark.
+	Sources   []string `yaml:"sources,omitempty"`
+	Source    string   `yaml:"source,omitempty"`
 	savedOpen bool
 	Children  []*projectNode `yaml:"children,omitempty"`
 }
@@ -128,7 +131,7 @@ func scanProjects(ctx context.Context, root string) (*projectNode, error) {
 					node.Repository = sameDirectory(strings.TrimSuffix(string(output), "\n"), path)
 					node.Bare = node.Repository && !marker
 					if node.Repository {
-						node.Source = readRepositorySource(ctx, git, path, env)
+						node.Sources, node.Source = readRepositorySources(ctx, git, path, env)
 					}
 				}
 			}

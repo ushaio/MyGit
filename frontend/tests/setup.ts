@@ -11,6 +11,7 @@ vi.mock("@wailsio/runtime", () => ({
     Emit: vi.fn(async () => false),
     Off: vi.fn(),
   },
+  Window: { Close: vi.fn(async () => {}) },
 }))
 afterEach(cleanup)
 Object.defineProperty(window, "matchMedia", { writable: true, value: vi.fn().mockImplementation(query => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() {} })) })

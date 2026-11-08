@@ -131,6 +131,15 @@ export interface TerminalCommand {
     "Path": string;
 }
 
+/**
+ * TerminalCommandLists is the pair the terminal sidebar shows: the selected
+ * project's shortcuts and the general shortcuts shared by every project.
+ */
+export interface TerminalCommandLists {
+    "Project": TerminalCommand[] | null;
+    "Common": TerminalCommand[] | null;
+}
+
 export interface TerminalOutput {
     "Data": string;
     "Offset": number;
@@ -150,6 +159,29 @@ export interface TerminalProfile {
     "Kind": string;
     "Available": boolean;
     "Default": boolean;
+}
+
+/**
+ * TerminalSessionLayout is the set of terminals that were open when the app last
+ * closed, together with the active tab index and the page that was showing.
+ * Active is -1 when no tab was active.
+ */
+export interface TerminalSessionLayout {
+    "Tabs"?: TerminalSessionState[] | null;
+    "Active": number;
+    "Page"?: string;
+}
+
+/**
+ * TerminalSessionState is one terminal tab remembered across launches: where it
+ * ran, which shell it used and the command it was started with.
+ */
+export interface TerminalSessionState {
+    "Project"?: string;
+    "Path": string;
+    "Label"?: string;
+    "Profile"?: string;
+    "Command"?: string;
 }
 
 /**

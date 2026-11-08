@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// knownSources fixes the order a repository's sources are reported in. The
+// sidebar renders one tab per source in this order, so a new platform only
+// needs an entry here and a host mapping in repositorySource.
+var knownSources = []string{"github", "gitee", "gitcode"}
+
 // remoteHost returns the lower-case host of a Git remote URL, such as
 // github.com, or an empty string when it cannot be read. It understands URL
 // forms with a scheme, the scp-like git@host:owner/repo form, and a bare
@@ -53,10 +58,29 @@ func repositorySource(remote string) string {
 	return ""
 }
 
-// readRepositorySource returns the source of a repository's preferred remote
-// (origin when present, else the first) or an empty string when no remote
-// names a known host. Discovery runs Git once per repository for it.
-func readRepositorySource(ctx context.Context, git, path string, env []string) string {
+// repositorySources maps every remote URL to its source, dropping unknown
+// hosts and duplicates. A repository can be published on several hosts at
+// once, so the sidebar lists it under each of their tabs.
+func repositorySources(remotes []string) []string {
+	seen := make(map[string]bool, len(remotes))
+	for _, remote := range remotes {
+		if source := repositorySource(remote); source != "" {
+			seen[source] = true
+		}
+	}
+	sources := make([]string, 0, len(seen))
+	for _, source := range knownSources {
+		if seen[source] {
+			sources = append(sources, source)
+		}
+	}
+	return sources
+}
+
+// readRepositorySources returns every source a repository's remotes point at
+// and the source of its preferred remote (origin when present, else the first
+// source in known order). Discovery runs Git once per repository for it.
+func readRepositorySources(ctx context.Context, git, path string, env []string) ([]string, string) {
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(probeCtx, git, "-C", path, "remote", "-v")
@@ -64,9 +88,10 @@ func readRepositorySource(ctx context.Context, git, path string, env []string) s
 	cmd.Env = env
 	output, err := cmd.Output()
 	if err != nil {
-		return ""
+		return nil, ""
 	}
-	origin, first := "", ""
+	origin := ""
+	var remotes []string
 	for _, line := range strings.Split(string(output), "\n") {
 		fields := strings.SplitN(line, "\t", 2)
 		if len(fields) != 2 || !strings.Contains(fields[1], "(fetch)") {
@@ -75,14 +100,15 @@ func readRepositorySource(ctx context.Context, git, path string, env []string) s
 		url := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(fields[1]), "(fetch)"))
 		if fields[0] == "origin" {
 			origin = url
-			break
 		}
-		if first == "" {
-			first = url
-		}
+		remotes = append(remotes, url)
 	}
-	if origin != "" {
-		return repositorySource(origin)
+	sources := repositorySources(remotes)
+	primary := repositorySource(origin)
+	// A repository whose preferred remote lives on an unknown host still
+	// leads with one of the hosts it is mirrored on.
+	if primary == "" && len(sources) > 0 {
+		primary = sources[0]
 	}
-	return repositorySource(first)
+	return sources, primary
 }

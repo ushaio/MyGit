@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events, Window } from "@wailsio/runtime";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Lifecycle } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { useWorkbench } from "@/lib/workbench";
+import { report, useWorkbench } from "@/lib/workbench";
 
 /**
  * Asks what the window close button should do. The Go close hook cancels the
@@ -34,9 +34,10 @@ export function CloseConfirmDialog() {
     return typeof off === "function" ? off : undefined;
   }, []);
 
-  const resolve = (action: "minimize" | "exit") => {
+  const resolve = async (action: "minimize" | "exit") => {
     setOpen(false);
-    void w.update(Lifecycle.ResolveClose(action, remember));
+    const updated = await w.update(Lifecycle.ResolveClose(action, remember));
+    if (updated && action === "exit") await report(Window.Close());
   };
 
   return (
