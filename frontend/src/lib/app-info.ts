@@ -3,7 +3,7 @@
 // Keep APP_VERSION in sync with build/config.yml (info.version) and
 // frontend/package.json (version) when cutting a release.
 export const APP_NAME = "MyGit";
-export const APP_VERSION = "0.4.0";
+export const APP_VERSION = "0.4.1";
 
 export const APP_REPOSITORY = "https://github.com/ushaio/MyGit";
 export const APP_RELEASES = "https://github.com/ushaio/MyGit/releases/latest";

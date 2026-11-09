@@ -14,6 +14,12 @@
 
 ### 修复
 
+## [0.4.1] - 2026-11-09
+
+### 变更
+
+- 版本号更新至 0.4.1，功能与 0.4.0 保持一致，用于再次验证应用内更新流程。
+
 ## [0.4.0] - 2026-11-09
 
 ### 新增
@@ -139,7 +145,8 @@
 
 - 新增 `README.md`，包含 Logo、特性与技术栈说明，以及友情链接（LINUX DO、OneGit）。
 
-[未发布]: https://github.com/ushaio/MyGit/compare/v0.4.0...HEAD
+[未发布]: https://github.com/ushaio/MyGit/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/ushaio/MyGit/releases/tag/v0.4.1
 [0.4.0]: https://github.com/ushaio/MyGit/releases/tag/v0.4.0
 [0.3.1]: https://github.com/ushaio/MyGit/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ushaio/MyGit/releases/tag/v0.3.0

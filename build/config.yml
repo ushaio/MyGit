@@ -6,7 +6,7 @@ info:
   productIdentifier: app.mygit.desktop
   description: MyGit
   copyright: Copyright 2026 MyGit contributors
-  version: 0.4.0
+  version: 0.4.1
 
 dev_mode:
   root_path: .
