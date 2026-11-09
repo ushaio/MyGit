@@ -256,6 +256,8 @@ const zh: Record<string, string> = {
   "Loading…": "正在加载…",
   "Operation completed": "操作完成",
   Copied: "已复制",
+  "Copy logs": "复制日志",
+  "Copy failed": "复制失败",
   "No commits": "暂无提交",
   "Binary file": "二进制文件",
   "File too large to display": "文件过大，无法在此显示",

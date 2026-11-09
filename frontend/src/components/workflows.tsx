@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   ChevronRight,
+  Copy,
   ExternalLink,
   GitBranch,
   Layers,
@@ -28,6 +29,7 @@ import {
   type WorkflowTarget,
 } from "@/lib/api";
 import { report, useWorkbench } from "@/lib/workbench";
+import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -611,6 +613,33 @@ function WorkflowJobDetails({
     setLogsRequested(true);
   }
 
+  async function copyStepLog(number: number) {
+    let content = logs[number];
+    if (content === undefined) {
+      try {
+        const result = await Workflow.JobLogs(target, run.ID, job.ID);
+        const fetched = Object.fromEntries(
+          (result.Steps ?? []).map((step) => [step.Number, step.Content]),
+        );
+        setLogs(fetched);
+        content = fetched[number];
+      } catch (error) {
+        toast.error(errorMessage(error));
+        return;
+      }
+    }
+    if (content === undefined || content === "") {
+      toast.error(t("No log output for this step."));
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(content);
+      toast.success(t("Copied"));
+    } catch {
+      toast.error(t("Copy failed"));
+    }
+  }
+
   return (
     <aside
       aria-label={`${t("Jobs")}: ${job.Name}`}
@@ -701,6 +730,26 @@ function WorkflowJobDetails({
                   />
                   <span className="min-w-0 flex-1 break-words">
                     {step.Name}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title={t("Copy logs")}
+                    aria-label={t("Copy logs")}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void copyStepLog(step.Number);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void copyStepLog(step.Number);
+                      }
+                    }}
+                    className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <Copy className="size-3" />
                   </span>
                   <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                     {formatDuration(step.StartedAt, step.CompletedAt)}
