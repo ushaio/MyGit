@@ -485,7 +485,7 @@ it("does not dispatch twice while a run request is in flight", async () => {
     name: "Run workflow",
   });
   await user.click(runButton);
-  await user.click(await screen.findByRole("button", { name: "Confirm" }));
+  await user.click(await screen.findByRole("button", { name: "Start run" }));
   await waitFor(() => expect(Workflow.Dispatch).toHaveBeenCalledTimes(1));
   expect(runButton).toBeDisabled();
 
@@ -554,8 +554,8 @@ it("blocks submissions that miss a required input", async () => {
   renderRuns(makeStub("/repo", "https://github.com/octocat/hello.git"));
 
   await user.click(await screen.findByRole("button", { name: "Run workflow" }));
-  await user.click(await screen.findByRole("button", { name: "Confirm" }));
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await screen.findByRole("dialog", { name: "Run workflow" });
+  await within(dialog).findByRole("textbox", { name: "reason" });
 
   await user.click(within(dialog).getByRole("button", { name: "Start run" }));
 

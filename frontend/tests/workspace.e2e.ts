@@ -343,11 +343,48 @@ test('workflow bar lists scripts and opens run history in the main view', async 
   await expect(page.getByText('Cancel this run?', {exact: true})).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByText('Cancel this run?', {exact: true})).toBeHidden();
-  // Run workflow also asks for confirmation.
+  // Run opens a complete form; no request is dispatched until the user submits it.
+  await page.evaluate(() => {
+    const state = window as any;
+    const original = state.__mygitTestBackend.call;
+    state.workflowDispatches = [];
+    state.__mygitTestBackend.call = async (name: string, ...args: unknown[]) => {
+      if (name === 'WorkflowService.Inputs') return [
+        {Name: 'mode', Description: '运行模式：verify=只验证打包不发版；release=构建并发布 Release', Type: 'choice', Options: ['verify', 'release'], Default: 'verify', Required: false},
+        {Name: 'version', Description: '发版版本号（仅 mode=release 时使用，不含前导 v），须与 CHANGELOG 中的 [版本] 一致', Type: 'string', Options: [], Default: '', Required: false},
+        {Name: 'dry_run', Description: '仅演练，不发布产物', Type: 'boolean', Options: [], Default: 'false', Required: false},
+      ];
+      if (name === 'WorkflowService.Dispatch') { state.workflowDispatches.push(args); return; }
+      return original(name, ...args);
+    };
+  });
   await page.getByRole('button', {name: 'Run workflow', exact: true}).click();
-  await expect(page.getByText('Run this workflow?', {exact: true})).toBeVisible();
+  const runForm = page.getByRole('dialog', {name: 'Run workflow', exact: true});
+  await expect(runForm.getByRole('combobox', {name: 'Ref', exact: true})).toHaveText(/main/);
+  await expect(runForm.getByRole('combobox', {name: 'mode', exact: true})).toHaveText('verify');
+  expect(await page.evaluate(() => (window as any).workflowDispatches)).toHaveLength(0);
+  await runForm.getByRole('combobox', {name: 'mode', exact: true}).click();
+  await page.getByRole('option', {name: 'release', exact: true}).click();
+  await runForm.getByRole('textbox', {name: 'version', exact: true}).fill('0.3.2');
+  await runForm.getByRole('checkbox', {name: 'dry_run', exact: true}).check();
+  await expect(runForm).toBeVisible();
+  const formBounds = await runForm.boundingBox();
+  expect(formBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(formBounds!.y + formBounds!.height).toBeLessThanOrEqual(803);
+  await page.screenshot({path: info.outputPath('workflow-inputs.png')});
+  await runForm.getByRole('button', {name: 'Start run', exact: true}).click();
+  await expect(runForm).toHaveCount(0);
+  const dispatched = await page.evaluate(() => (window as any).workflowDispatches);
+  expect(dispatched).toHaveLength(1);
+  expect(dispatched[0][1]).toBe(101);
+  expect(dispatched[0][2]).toBe('main');
+  expect(dispatched[0][3].map((input: {Name: string; Default: string}) => [input.Name, input.Default])).toEqual([
+    ['mode', 'release'], ['version', '0.3.2'], ['dry_run', 'true'],
+  ]);
+  await page.getByRole('button', {name: 'Run workflow', exact: true}).click();
+  await expect(runForm.getByRole('combobox', {name: 'mode', exact: true})).toHaveText('verify');
   await page.keyboard.press('Escape');
-  await expect(page.getByText('Run this workflow?', {exact: true})).toBeHidden();
+  await expect(runForm).toHaveCount(0);
   await page.screenshot({path: info.outputPath('workflows.png')});
 });
 

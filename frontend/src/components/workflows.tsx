@@ -22,7 +22,6 @@ import {
   type WorkflowAccount,
   type WorkflowCapabilities,
   type WorkflowInfo,
-  type WorkflowInput,
   type WorkflowJob,
   type WorkflowRun,
   type WorkflowStep,
@@ -33,22 +32,7 @@ import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { WorkflowRunPopover } from "@/components/workflow-run-popover";
 import { ErrorNotice, IconButton, Loading } from "@/components/shared";
 import { WorkflowJobGraph } from "@/components/workflow-graph";
 import {
@@ -836,13 +820,6 @@ export function WorkflowRunsView({ workflowID }: { workflowID: number }) {
     runID: number;
     jobID: number;
   } | null>(null);
-  const [refValue, setRefValue] = useState(w.repo?.Tracking?.Branch || "main");
-  const [formOpen, setFormOpen] = useState(false);
-  const [inputDefs, setInputDefs] = useState<WorkflowInput[]>([]);
-  const [inputValues, setInputValues] = useState<Record<string, string>>({});
-  const [formError, setFormError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
   const requestRef = useRef(0);
   const jobsRequestRef = useRef(0);
 
@@ -856,10 +833,6 @@ export function WorkflowRunsView({ workflowID }: { workflowID: number }) {
       jobsRequestRef.current += 1;
     };
   }, [w.repo?.Path, workflowID]);
-
-  useEffect(() => {
-    setRefValue(w.repo?.Tracking?.Branch || "main");
-  }, [w.repo?.Path]);
 
   const canRead = !!target && !!caps?.ListRuns && !!account?.Configured;
 
@@ -926,62 +899,6 @@ export function WorkflowRunsView({ workflowID }: { workflowID: number }) {
   }, [hasActive]);
 
   const bumpRuns = useCallback(() => setReloadKey((k) => k + 1), []);
-
-  async function doDispatch(payload: WorkflowInput[]) {
-    if (!target || !selected || submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await Workflow.Dispatch(target, selected.ID, refValue, payload);
-      setFormOpen(false);
-      setInputDefs([]);
-      setInputValues({});
-      setFormError("");
-      bumpRuns();
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
-  }
-
-  async function openRun() {
-    if (!target || !selected) return;
-    try {
-      const defs =
-        (await Workflow.Inputs(target, selected.Path, refValue)) ?? [];
-      if (defs.length === 0) {
-        await doDispatch([]);
-        return;
-      }
-      const initial: Record<string, string> = {};
-      for (const def of defs) initial[def.Name] = def.Default ?? "";
-      setInputDefs(defs);
-      setInputValues(initial);
-      setFormError("");
-      setFormOpen(true);
-    } catch (e) {
-      setRunsError(errorMessage(e));
-    }
-  }
-
-  async function confirmRun() {
-    if (!selected) return;
-    const missing = inputDefs.find(
-      (def) => def.Required && !(inputValues[def.Name] ?? "").trim(),
-    );
-    if (missing) {
-      setFormError(`${t("Required")}: ${missing.Name}`);
-      return;
-    }
-    await doDispatch(
-      inputDefs.map((def) => ({
-        ...def,
-        Default: inputValues[def.Name] ?? def.Default ?? "",
-      })),
-    );
-  }
 
   async function act(promise: Promise<unknown>) {
     try {
@@ -1225,62 +1142,16 @@ export function WorkflowRunsView({ workflowID }: { workflowID: number }) {
           </span>
         )}
         <div className="flex-1" />
-        {selected && caps?.Dispatch && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground">
-              {t("Ref")}
-            </span>
-            <Select value={refValue} onValueChange={setRefValue}>
-              <SelectTrigger
-                size="sm"
-                className="h-7 w-32 text-xs"
-                aria-label={t("Ref")}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((branch) => (
-                  <SelectItem key={branch.Name} value={branch.Name}>
-                    {branch.Name}
-                  </SelectItem>
-                ))}
-                {!branches.some((branch) => branch.Name === refValue) && (
-                  <SelectItem value={refValue}>{refValue}</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  size="sm"
-                  disabled={submitting}
-                  aria-label={t("Run workflow")}
-                >
-                  {submitting ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Play className="size-3" />
-                  )}
-                  {t("Run workflow")}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-56 space-y-2">
-                <p className="text-xs">{t("Run this workflow?")}</p>
-                <div className="flex justify-end gap-1">
-                  <PopoverClose asChild>
-                    <Button size="xs" variant="ghost">
-                      {t("Cancel")}
-                    </Button>
-                  </PopoverClose>
-                  <PopoverClose asChild>
-                    <Button size="xs" onClick={() => void openRun()}>
-                      {t("Confirm")}
-                    </Button>
-                  </PopoverClose>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
+        {selected && target && caps?.Dispatch && (
+          <WorkflowRunPopover
+            key={`${w.repo?.Path}:${target.WebURL}:${selected.ID}`}
+            target={target}
+            workflow={selected}
+            branches={branches.map((branch) => branch.Name)}
+            initialRef={w.repo?.Tracking?.Branch || "main"}
+            disabled={!account?.Configured}
+            onDispatched={bumpRuns}
+          />
         )}
         <IconButton label="Refresh" onClick={bumpRuns} disabled={runsLoading}>
           <RefreshCw className={cn("size-3", runsLoading && "animate-spin")} />
@@ -1306,102 +1177,6 @@ export function WorkflowRunsView({ workflowID }: { workflowID: number }) {
         )}
       </div>
 
-      <Dialog
-        open={formOpen}
-        onOpenChange={(next) => {
-          if (!submitting) setFormOpen(next);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              {t("Run workflow")}
-              {selected ? ` · ${selected.Name}` : ""}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 text-xs">
-            {formError && (
-              <p role="alert" className="text-[11px] text-destructive">
-                {formError}
-              </p>
-            )}
-            {inputDefs.map((def) => (
-              <label key={def.Name} className="grid gap-1">
-                <span className="flex items-center gap-0.5 font-medium">
-                  {def.Name}
-                  {def.Required && <span className="text-destructive">*</span>}
-                </span>
-                {def.Description && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {def.Description}
-                  </span>
-                )}
-                {def.Type === "boolean" ? (
-                  <Checkbox
-                    aria-label={def.Name}
-                    checked={inputValues[def.Name] === "true"}
-                    onCheckedChange={(checked) =>
-                      setInputValues((values) => ({
-                        ...values,
-                        [def.Name]: checked === true ? "true" : "false",
-                      }))
-                    }
-                  />
-                ) : def.Type === "choice" ? (
-                  <Select
-                    value={inputValues[def.Name] || def.Options?.[0] || ""}
-                    onValueChange={(value) =>
-                      setInputValues((values) => ({
-                        ...values,
-                        [def.Name]: value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger aria-label={def.Name} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(def.Options ?? []).map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    aria-label={def.Name}
-                    value={inputValues[def.Name] ?? ""}
-                    onChange={(event) =>
-                      setInputValues((values) => ({
-                        ...values,
-                        [def.Name]: event.target.value,
-                      }))
-                    }
-                  />
-                )}
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setFormOpen(false)}
-              disabled={submitting}
-            >
-              {t("Cancel")}
-            </Button>
-            <Button onClick={() => void confirmRun()} disabled={submitting}>
-              {submitting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              {t("Start run")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
