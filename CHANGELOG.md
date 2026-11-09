@@ -10,6 +10,14 @@
 
 ### 新增
 
+### 变更
+
+### 修复
+
+## [0.4.0] - 2026-11-09
+
+### 新增
+
 - 终端支持复制粘贴：右键弹出「复制 / 粘贴」菜单（复制当前选中文本、粘贴到会话），并支持 `Ctrl+Shift+C` / `Ctrl+Shift+V` 复制与粘贴；普通 `Ctrl+C` 仍照常向 shell 发送中断信号。
 - 项目工具栏右侧新增打开方式分体按钮，可选择在浏览器、文件资源管理器、系统终端或 VS Code 中打开项目；主按钮执行所选方式，未安装 VS Code 时对应菜单项置灰并显示「未安装」。
 - 底部状态栏右侧新增终端列表入口：按 Git 项目分组展示已打开的终端，可跨项目切换，悬停或键盘聚焦时显示关闭按钮。
@@ -131,7 +139,8 @@
 
 - 新增 `README.md`，包含 Logo、特性与技术栈说明，以及友情链接（LINUX DO、OneGit）。
 
-[未发布]: https://github.com/ushaio/MyGit/compare/v0.3.1...HEAD
+[未发布]: https://github.com/ushaio/MyGit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ushaio/MyGit/releases/tag/v0.4.0
 [0.3.1]: https://github.com/ushaio/MyGit/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ushaio/MyGit/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ushaio/MyGit/releases/tag/v0.2.0

@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "0.3.1"
+		"file_version": "0.4.0"
 	},
 	"info": {
 		"0409": {
-			"ProductVersion": "0.3.1",
+			"ProductVersion": "0.4.0",
 			"CompanyName": "MyGit",
 			"FileDescription": "MyGit",
 			"LegalCopyright": "Copyright 2026 MyGit contributors",
