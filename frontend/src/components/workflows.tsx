@@ -731,6 +731,9 @@ function WorkflowJobDetails({
                   <span className="min-w-0 flex-1 break-words">
                     {step.Name}
                   </span>
+                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                    {formatDuration(step.StartedAt, step.CompletedAt)}
+                  </span>
                   <span
                     role="button"
                     tabIndex={0}
@@ -750,9 +753,6 @@ function WorkflowJobDetails({
                     className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <Copy className="size-3" />
-                  </span>
-                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                    {formatDuration(step.StartedAt, step.CompletedAt)}
                   </span>
                 </button>
                 <div
