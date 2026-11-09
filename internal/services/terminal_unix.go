@@ -9,8 +9,9 @@ import (
 	"syscall"
 )
 
-func configureTerminal(cmd *exec.Cmd) {
+func configureTerminal(cmd *exec.Cmd, _ TerminalProfile) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	return nil
 }
 func stopTerminal(cmd *exec.Cmd) error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 

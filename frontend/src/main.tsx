@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { WorkbenchProvider } from "@/lib/workbench";
+import { DevAgentation } from "@/components/dev-agentation";
 import App from "./App";
 import "./index.css";
 
@@ -50,6 +51,7 @@ createRoot(document.getElementById("root")!).render(
         <WorkbenchProvider>
           <App />
         </WorkbenchProvider>
+        <DevAgentation />
         <Toaster position="bottom-right" closeButton richColors />
       </TooltipProvider>
     </ThemeProvider>

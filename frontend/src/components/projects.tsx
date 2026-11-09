@@ -329,11 +329,6 @@ export function ProjectSidebar() {
               >
                 <ShellIcon profile={tab.profile} shell={tab.shell} />
                 <span className="truncate">{tab.label}</span>
-                {basename(tab.path) !== tab.label && (
-                  <span className="ml-auto truncate text-[10px] opacity-70">
-                    {basename(tab.path)}
-                  </span>
-                )}
               </button>
             ))}
           </div>

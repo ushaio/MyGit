@@ -32,3 +32,10 @@ export function Reveal(path: string): $CancellablePromise<void> {
 export function SaveText(name: string, text: string): $CancellablePromise<void> {
     return $Call.ByName("mygit-wails3/internal/services.DesktopService.SaveText", name, text);
 }
+
+/**
+ * ToolAvailable reports whether an editor can actually be launched on this host.
+ */
+export function ToolAvailable(tool: string): $CancellablePromise<boolean> {
+    return $Call.ByName("mygit-wails3/internal/services.DesktopService.ToolAvailable", tool);
+}

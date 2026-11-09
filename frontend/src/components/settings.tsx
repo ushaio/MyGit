@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -7,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  CheckCircle2,
   Code2,
   Download,
   ExternalLink,
@@ -47,9 +49,12 @@ import {
 import {
   AI,
   Desktop,
+  Workflow,
   Workspace,
   type AIModel,
   type Preferences,
+  type WorkflowAccount,
+  type WorkflowTarget,
 } from "@/lib/api";
 import {
   APP_ISSUES,
@@ -72,6 +77,7 @@ const sections: {
   { id: "general", label: "General", icon: Palette },
   { id: "editor", label: "Editor", icon: Code2 },
   { id: "ai", label: "AI", icon: Sparkles },
+  { id: "workflows", label: "Workflows", icon: GitBranch },
   { id: "folders", label: "Folders", icon: Folder },
   { id: "about", label: "About", icon: Info },
 ];
@@ -100,6 +106,155 @@ function Field({
           <span className="text-[11px] text-muted-foreground">{hint}</span>
         )
       )}
+    </div>
+  );
+}
+
+// Classic PAT creation page with the scopes and description preselected, so the
+// user only has to review and click "Generate token".
+const GITHUB_TOKEN_URL =
+  "https://github.com/settings/tokens/new?scopes=repo,workflow&description=MyGit%20GitHub%20Actions%20token";
+
+/**
+ * GitHub Actions token management. Tokens live in the system credential store
+ * (never in workspace.json); the backend validates them against GET /user and
+ * returns the login name. Gitee/GitCode are view-only and need no token.
+ */
+function WorkflowsSettings() {
+  const t = useT();
+  const target = { Platform: "github", Host: "github.com" } as WorkflowTarget;
+  const [account, setAccount] = useState<WorkflowAccount | null>(null);
+  const [token, setToken] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      setAccount(await Workflow.Account(target));
+      setError("");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function save() {
+    if (!token.trim()) return;
+    setSaving(true);
+    try {
+      setAccount(await Workflow.SaveToken(target, token.trim()));
+      setToken("");
+      setError("");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function remove() {
+    setSaving(true);
+    try {
+      setAccount(await Workflow.DeleteToken(target));
+      setError("");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4 text-xs">
+      <div className="grid gap-3 rounded-md border bg-muted/30 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 font-medium">
+            <Github className="size-3.5" />
+            {t("GitHub Actions token")}
+          </span>
+          {loading ? (
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          ) : account?.Configured ? (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <CheckCircle2 className="size-3.5 text-emerald-500" />
+              {account.Account
+                ? `${t("Signed in as")} ${account.Account}`
+                : t("Configured")}
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">
+              {t("Not configured")}
+            </span>
+          )}
+        </div>
+        <Field
+          label={t("Personal access token")}
+          hint={t(
+            "A GitHub token with repo and workflow scopes. It is stored in the system credential store, never in workspace.json.",
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="password"
+              autoComplete="off"
+              className="min-w-0 flex-1"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder={
+                account?.Configured ? t("Replace token…") : "ghp_…"
+              }
+              aria-label={t("Personal access token")}
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void save()}
+              disabled={saving || !token.trim()}
+            >
+              {t("Save token")}
+            </Button>
+            {account?.Configured && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void remove()}
+                disabled={saving}
+              >
+                {t("Remove")}
+              </Button>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+              onClick={() => report(Desktop.OpenURL(GITHUB_TOKEN_URL))}
+              title={t(
+                "Opens GitHub with the repo and workflow scopes preselected. Review and click Generate token, then paste it above.",
+              )}
+            >
+              <ExternalLink className="size-3" />
+              {t("Create token on GitHub")}
+            </button>
+          </div>
+        </Field>
+        {error && (
+          <span role="alert" className="text-[11px] text-destructive">
+            {error}
+          </span>
+        )}
+        <span className="text-[11px] leading-relaxed text-muted-foreground">
+          {t(
+            "Gitee and GitCode repositories are view-only: MyGit links to their web pages but does not run workflows there.",
+          )}
+        </span>
+      </div>
     </div>
   );
 }
@@ -454,6 +609,8 @@ export function SettingsDialog() {
             </Field>
           </div>
         );
+      case "workflows":
+        return <WorkflowsSettings />;
       case "folders":
         return (
           <div className="grid gap-3">

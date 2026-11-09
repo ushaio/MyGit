@@ -477,6 +477,31 @@ function TerminalViewport({ id, active }: { id: string; active: boolean }) {
       }),
     );
     terminal.open(container.current);
+    // Ctrl+Shift+C copies the current selection; Ctrl+Shift+V pastes from the
+    // clipboard. Plain Ctrl+C is left untouched so it still reaches the shell
+    // as SIGINT. Returning false tells xterm we handled the key.
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      if (!event.ctrlKey || !event.shiftKey) return true;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        if (event.metaKey || event.altKey) return true;
+        const selection = terminal.getSelection();
+        if (selection) void navigator.clipboard?.writeText(selection);
+        return false;
+      }
+      if (key === "v") {
+        if (event.metaKey || event.altKey) return true;
+        void navigator.clipboard
+          ?.readText()
+          .then((text) => {
+            if (text) void report(Term.Write(id, text));
+          })
+          .catch(() => {});
+        return false;
+      }
+      return true;
+    });
     const input = terminal.onData((data) => {
       void report(Term.Write(id, data));
     });
@@ -559,10 +584,31 @@ function TerminalViewport({ id, active }: { id: string; active: boolean }) {
       return () => clearTimeout(timer);
     }
   }, [active, id]);
+  const copy = () => {
+    const selection = terminalRef.current?.getSelection();
+    if (selection) void navigator.clipboard?.writeText(selection);
+  };
+  const paste = () => {
+    void navigator.clipboard
+      ?.readText()
+      .then((text) => {
+        if (text) void report(Term.Write(id, text));
+        terminalRef.current?.focus();
+      })
+      .catch(() => {});
+  };
   return (
-    <div
-      ref={container}
-      className={cn("min-h-0 flex-1 p-3", active ? "block" : "hidden")}
-    />
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={container}
+          className={cn("min-h-0 flex-1 p-3", active ? "block" : "hidden")}
+        />
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={copy}>{t("Copy")}</ContextMenuItem>
+        <ContextMenuItem onSelect={paste}>{t("Paste")}</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

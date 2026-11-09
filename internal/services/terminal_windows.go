@@ -1,16 +1,33 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf16"
 )
 
-func configureTerminal(*exec.Cmd) {}
+func configureTerminal(cmd *exec.Cmd, profile TerminalProfile) error {
+	if profile.Kind == "wsl" {
+		path, err := filepath.Abs(cmd.Dir)
+		if err != nil {
+			return fmt.Errorf("resolve WSL terminal directory: %w", err)
+		}
+		// Let WSL translate the Windows path using the distribution's own mount
+		// configuration. A separate argument also preserves spaces and shell syntax.
+		cmd.Args = append(cmd.Args, "--cd", path)
+		cmd.Dir = path
+	}
+	return nil
+}
 
 func stopTerminal(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
@@ -142,5 +159,35 @@ func findGitBash() string {
 }
 
 func findWSL() string {
-	return executable("wsl.exe")
+	shell := executable("wsl.exe")
+	if shell == "" {
+		return ""
+	}
+	// Windows can ship wsl.exe without any usable distribution. Listing does
+	// not boot a distribution or trigger first-run setup, and must not hang UI.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, shell, "--list", "--quiet")
+	hideConsole(cmd)
+	if !hasWSLDistributions(cmd.Output()) {
+		return ""
+	}
+	return shell
+}
+
+func hasWSLDistributions(output []byte, err error) bool {
+	if err != nil {
+		return false
+	}
+	// Redirected wsl.exe output is normally UTF-16LE (often without a BOM).
+	// Also accept UTF-8 for versions that emit it.
+	text := string(output)
+	if bytes.Contains(output, []byte{0}) || bytes.HasPrefix(output, []byte{0xff, 0xfe}) {
+		units := make([]uint16, len(output)/2)
+		for index := range units {
+			units[index] = binary.LittleEndian.Uint16(output[index*2:])
+		}
+		text = string(utf16.Decode(units))
+	}
+	return strings.TrimSpace(strings.TrimPrefix(text, "\ufeff")) != ""
 }

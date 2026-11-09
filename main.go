@@ -60,6 +60,7 @@ func main() {
 			application.NewService(desktop),
 			application.NewService(appService),
 			application.NewService(services.NewAIService(store)),
+			application.NewService(services.NewWorkflowService()),
 			application.NewService(services.NewTerminalService(dir)),
 		},
 		Assets: application.AssetOptions{Handler: application.AssetFileServerFS(frontend)},

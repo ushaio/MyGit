@@ -1,10 +1,12 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Check,
   ChevronDown,
@@ -55,9 +57,33 @@ import { basename, errorMessage, joinPath } from "@/lib/utils";
 import { copy, report, useWorkbench } from "@/lib/workbench";
 import { useT } from "@/lib/i18n";
 import { DiffView } from "./diff-view";
-import { ErrorNotice, IconButton, Loading, Section } from "./shared";
+import { ErrorNotice, IconButton, Loading } from "./shared";
 
 const fileKey = (file: FileChange) => `${file.Area}:${file.Path}`;
+
+// A flattened row of the files panel. A tall tree of thousands of files is
+// rendered as one flat list so the list itself can be virtualized: only the
+// rows in (or near) the viewport mount. Section headers and collapsible
+// folders are rows too, so ordering and collapsing behave exactly like the
+// old recursive tree.
+type FileSection = {
+  kind: "section";
+  id: string;
+  title: string;
+  count: number;
+  area: number | null;
+};
+type FileFolder = {
+  kind: "folder";
+  id: string;
+  area: number;
+  name: string;
+  path: string;
+  depth: number;
+  files: FileChange[];
+};
+type FileLeaf = { kind: "file"; id: string; file: FileChange; depth: number };
+type FileRow = FileSection | FileFolder | FileLeaf;
 
 export function FileBrowser({
   request,
@@ -374,75 +400,182 @@ export function FileBrowser({
       </ContextMenu>
     );
   }
-  function tree(list: FileChange[], prefix = "", depth = 0): React.ReactNode {
+  // Walk the folder tree in the same order the recursive tree did, but push
+  // flat rows instead of nesting React nodes. Collapsed folders are not
+  // descended, exactly like before.
+  function flatten(
+    list: FileChange[],
+    prefix: string,
+    depth: number,
+    out: FileRow[],
+  ) {
     const entries = new Map<string, FileChange[]>();
     for (const file of list) {
       const name = file.Path.slice(prefix.length).split("/")[0];
       entries.set(name, [...(entries.get(name) || []), file]);
     }
-    return [...entries.entries()]
-      .sort(
-        ([a, aa], [b, bb]) =>
-          Number(bb[0].Path !== prefix + b) -
-            Number(aa[0].Path !== prefix + a) || a.localeCompare(b),
-      )
-      .map(([name, group]) => {
-        if (group[0].Path === prefix + name) return fileRow(group[0], depth);
-        const path = prefix + name + "/",
-          id = `${group[0].Area}:${path}`;
-        return (
-          <div key={id}>
-            <ContextMenu>
-              <ContextMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="nav-row file-row"
-                  style={{ paddingLeft: depth * 10 + 6 }}
-                  onClick={() =>
-                    setClosed((old) => {
-                      const next = new Set(old);
-                      next.has(id) ? next.delete(id) : next.add(id);
-                      return next;
-                    })
-                  }
-                >
-                  <ChevronRight
-                    className={`!size-3 ${closed.has(id) ? "" : "rotate-90"}`}
-                  />
-                  <Folder />
-                  <span className="truncate">{name}</span>
-                </button>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                {current && (
-                  <ContextMenuItem onSelect={() => stage(group, group[0].Area)}>
-                    {t(group[0].Area === 1 ? "Unstage" : "Stage")}
-                  </ContextMenuItem>
-                )}
-                <ContextMenuItem
-                  onSelect={() =>
-                    report(Desktop.OpenPath(joinPath(request.Path, path)))
-                  }
-                >
-                  {t("Open folder")}
-                </ContextMenuItem>
-                <ContextMenuItem
-                  onSelect={() => copy(group.map((f) => f.Path).join("\n"))}
-                >
-                  {t("Copy path")}
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-            {!closed.has(id) && tree(group, path, depth + 1)}
-          </div>
-        );
+    const sorted = [...entries.entries()].sort(
+      ([a, aa], [b, bb]) =>
+        Number(bb[0].Path !== prefix + b) -
+          Number(aa[0].Path !== prefix + a) || a.localeCompare(b),
+    );
+    for (const [name, group] of sorted) {
+      if (group[0].Path === prefix + name) {
+        out.push({ kind: "file", id: fileKey(group[0]), file: group[0], depth });
+        continue;
+      }
+      const path = prefix + name + "/";
+      const id = `${group[0].Area}:${path}`;
+      out.push({
+        kind: "folder",
+        id,
+        area: group[0].Area,
+        name,
+        path,
+        depth,
+        files: group,
       });
+      if (!closed.has(id)) flatten(group, path, depth + 1, out);
+    }
   }
+  function sectionRow(row: FileSection) {
+    const key = row.area === null ? "files" : row.area;
+    const area = row.area ?? 0;
+    const open = !collapsedSections.has(key);
+    return (
+      <div className="section-title">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          onClick={() =>
+            setCollapsedSections((old) => {
+              const next = new Set(old);
+              next.has(key) ? next.delete(key) : next.add(key);
+              return next;
+            })
+          }
+        >
+          <ChevronRight
+            className={`size-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          <span className="truncate">{t(row.title)}</span>
+          <span className="ml-auto text-[10px] font-normal tabular-nums">
+            {row.count}
+          </span>
+        </button>
+        {row.area !== null && (
+          <IconButton
+            label={area === 1 ? "Unstage all" : "Stage all"}
+            disabled={!!w.busy || row.count === 0}
+            onClick={() =>
+              stage(
+                files.filter((f) => f.Area === area),
+                area,
+              )
+            }
+          >
+            {area === 1 ? <Minus className="size-3" /> : <Plus className="size-3" />}
+          </IconButton>
+        )}
+      </div>
+    );
+  }
+  function folderRow(row: FileFolder) {
+    const { id, name, path, depth, files: group } = row;
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            type="button"
+            className="nav-row file-row"
+            style={{ paddingLeft: depth * 10 + 6 }}
+            onClick={() =>
+              setClosed((old) => {
+                const next = new Set(old);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })
+            }
+          >
+            <ChevronRight
+              className={`!size-3 ${closed.has(id) ? "" : "rotate-90"}`}
+            />
+            <Folder />
+            <span className="truncate">{name}</span>
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {current && (
+            <ContextMenuItem onSelect={() => stage(group, group[0].Area)}>
+              {t(group[0].Area === 1 ? "Unstage" : "Stage")}
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem
+            onSelect={() =>
+              report(Desktop.OpenPath(joinPath(request.Path, path)))
+            }
+          >
+            {t("Open folder")}
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => copy(group.map((f) => f.Path).join("\n"))}
+          >
+            {t("Copy path")}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+  const visible = useMemo(
+    () =>
+      files.filter((file) =>
+        file.Path.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [files, query],
+  );
+  const [collapsedSections, setCollapsedSections] = useState<
+    Set<number | "files">
+  >(new Set());
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rows = useMemo(() => {
+    const out: FileRow[] = [];
+    if (current) {
+      for (const area of [2, 1]) {
+        out.push({
+          kind: "section",
+          id: `section:${area}`,
+          title: area === 1 ? "Staged" : "Unstaged",
+          count: files.filter((f) => f.Area === area).length,
+          area,
+        });
+        if (!collapsedSections.has(area))
+          flatten(
+            visible.filter((f) => f.Area === area),
+            "",
+            0,
+            out,
+          );
+      }
+    } else {
+      out.push({
+        kind: "section",
+        id: "section:files",
+        title: "Files",
+        count: files.length,
+        area: null,
+      });
+      if (!collapsedSections.has("files")) flatten(visible, "", 0, out);
+    }
+    return out;
+  }, [current, visible, files, closed, collapsedSections]);
+  const virtual = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 30,
+    overscan: 20,
+  });
   if (loading && loadedKey.current !== key) return <Loading />;
   if (error) return <ErrorNotice error={error} retry={w.refresh} />;
-  const visible = files.filter((file) =>
-    file.Path.toLowerCase().includes(query.toLowerCase()),
-  );
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <div className="file-panel">
@@ -455,40 +588,31 @@ export function FileBrowser({
             aria-label={t("Filter files…")}
           />
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-1 pb-3">
-          {current ? (
-            [2, 1].map((area) => (
-              <Section
-                key={area}
-                title={area === 1 ? "Staged" : "Unstaged"}
-                count={files.filter((f) => f.Area === area).length}
-                action={
-                  <IconButton
-                    label={area === 1 ? "Unstage all" : "Stage all"}
-                    disabled={!!w.busy || !files.some((f) => f.Area === area)}
-                    onClick={() =>
-                      stage(
-                        files.filter((f) => f.Area === area),
-                        area,
-                      )
-                    }
-                  >
-                    {area === 1 ? (
-                      <Minus className="size-3" />
-                    ) : (
-                      <Plus className="size-3" />
-                    )}
-                  </IconButton>
-                }
-              >
-                {tree(visible.filter((f) => f.Area === area))}
-              </Section>
-            ))
-          ) : (
-            <Section title="Files" count={files.length}>
-              {tree(visible)}
-            </Section>
-          )}
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-1 pb-3">
+          <div style={{ height: virtual.getTotalSize(), position: "relative" }}>
+            {virtual.getVirtualItems().map((item) => {
+              const row = rows[item.index];
+              return (
+                <div
+                  key={row.id}
+                  data-index={item.index}
+                  ref={virtual.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    width: "100%",
+                    transform: `translateY(${item.start}px)`,
+                  }}
+                >
+                  {row.kind === "section"
+                    ? sectionRow(row)
+                    : row.kind === "folder"
+                      ? folderRow(row)
+                      : fileRow(row.file, row.depth)}
+                </div>
+              );
+            })}
+          </div>
         </div>
         {current && <CommitForm key={request.Path} />}
       </div>

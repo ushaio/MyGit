@@ -6,6 +6,7 @@ import * as AppService from "./appservice.js";
 import * as DesktopService from "./desktopservice.js";
 import * as RepositoryService from "./repositoryservice.js";
 import * as TerminalService from "./terminalservice.js";
+import * as WorkflowService from "./workflowservice.js";
 import * as WorkspaceService from "./workspaceservice.js";
 export {
     AIService,
@@ -13,6 +14,7 @@ export {
     DesktopService,
     RepositoryService,
     TerminalService,
+    WorkflowService,
     WorkspaceService
 };
 
@@ -33,5 +35,20 @@ export type {
     TerminalProfile,
     TerminalSessionLayout,
     TerminalSessionState,
-    UpdateInfo
+    UpdateInfo,
+    Workflow,
+    WorkflowAccount,
+    WorkflowCapabilities,
+    WorkflowGraph,
+    WorkflowGraphNode,
+    WorkflowInput,
+    WorkflowJob,
+    WorkflowJobLogs,
+    WorkflowJobs,
+    WorkflowList,
+    WorkflowRun,
+    WorkflowRuns,
+    WorkflowStep,
+    WorkflowStepLog,
+    WorkflowTarget
 } from "./models.js";

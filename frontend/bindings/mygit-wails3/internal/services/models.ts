@@ -200,3 +200,239 @@ export interface UpdateInfo {
     "AssetURL": string;
     "AssetSize": number;
 }
+
+/**
+ * Workflow is one workflow definition in a repository.
+ */
+export interface Workflow {
+    "ID": number;
+    "Name": string;
+
+    /**
+     * 例如 .github/workflows/ci.yml
+     */
+    "Path": string;
+
+    /**
+     * active | disabled_manually | ...
+     */
+    "State": string;
+    "HTMLURL": string;
+}
+
+/**
+ * WorkflowAccount reports whether a target's platform has a stored credential.
+ */
+export interface WorkflowAccount {
+    "Platform": string;
+    "Host": string;
+    "Configured": boolean;
+
+    /**
+     * 已配置返回登录名；未知为 ""
+     */
+    "Account": string;
+}
+
+/**
+ * WorkflowCapabilities says which operations a target supports. Gitee/GitCode
+ * only have OpenWeb=true until a public management API is confirmed.
+ */
+export interface WorkflowCapabilities {
+    "ListWorkflows": boolean;
+    "ListRuns": boolean;
+    "Dispatch": boolean;
+    "Rerun": boolean;
+    "Cancel": boolean;
+    "OpenWeb": boolean;
+}
+
+/**
+ * WorkflowGraph describes the dependencies declared in a run's workflow YAML.
+ * It is loaded separately from Jobs so unavailable source never hides run jobs.
+ */
+export interface WorkflowGraph {
+    "Nodes": WorkflowGraphNode[] | null;
+}
+
+/**
+ * WorkflowGraphNode is a YAML job before matrix or reusable-workflow expansion.
+ * Name retains expressions verbatim; Needs contains YAML job IDs, not run job IDs.
+ */
+export interface WorkflowGraphNode {
+    "ID": string;
+    "Name": string;
+    "Needs": string[] | null;
+}
+
+/**
+ * WorkflowInput is one workflow_dispatch parameter definition. Default doubles
+ * as the value the user submits back to Dispatch: the fixed interface is
+ * definition-shaped, so Dispatch reads each input's value from Default and only
+ * sends the non-empty ones.
+ */
+export interface WorkflowInput {
+    "Name": string;
+    "Description": string;
+    "Required": boolean;
+
+    /**
+     * "string" | "boolean" | "choice" | "environment"
+     */
+    "Type": string;
+    "Default": string;
+
+    /**
+     * 仅 choice 有值
+     */
+    "Options": string[] | null;
+}
+
+/**
+ * WorkflowJob is one job of a run. A matrix expands into one job per combination,
+ * which is why a single run can carry several "Build & Package (...)"" jobs.
+ */
+export interface WorkflowJob {
+    "ID": number;
+    "RunID": number;
+    "Name": string;
+    "Status": string;
+    "Conclusion": string;
+    "StartedAt": string;
+    "CompletedAt": string;
+    "Steps": WorkflowStep[] | null;
+}
+
+/**
+ * WorkflowJobLogs contains only the requested job's individual step logs.
+ * Missing files (for example, skipped steps) are omitted; aggregate job logs are
+ * never substituted for step logs. Content retains timestamps and group markers.
+ */
+export interface WorkflowJobLogs {
+    "Steps": WorkflowStepLog[] | null;
+}
+
+/**
+ * WorkflowJobs is the job list for one run.
+ */
+export interface WorkflowJobs {
+    "Jobs": WorkflowJob[] | null;
+    "Total": number;
+}
+
+/**
+ * WorkflowList is one page of workflow definitions.
+ */
+export interface WorkflowList {
+    "Workflows": Workflow[] | null;
+    "Total": number;
+    "Page": number;
+    "PerPage": number;
+    "HasMore": boolean;
+}
+
+/**
+ * WorkflowRun is one execution of a workflow.
+ */
+export interface WorkflowRun {
+    "ID": number;
+    "WorkflowID": number;
+    "Number": number;
+    "Title": string;
+
+    /**
+     * queued | in_progress | completed | ...
+     */
+    "Status": string;
+
+    /**
+     * success | failure | cancelled | skipped | ""（未完成时）
+     */
+    "Conclusion": string;
+    "Branch": string;
+    "HeadSHA": string;
+    "Event": string;
+
+    /**
+     * ISO8601
+     */
+    "CreatedAt": string;
+    "UpdatedAt": string;
+    "HTMLURL": string;
+}
+
+/**
+ * WorkflowRuns is one page of workflow run history.
+ */
+export interface WorkflowRuns {
+    "Runs": WorkflowRun[] | null;
+    "Total": number;
+    "Page": number;
+    "PerPage": number;
+    "HasMore": boolean;
+}
+
+/**
+ * WorkflowStep is one step inside a job (the leaf of the run → job → step tree).
+ */
+export interface WorkflowStep {
+    "Number": number;
+    "Name": string;
+
+    /**
+     * queued | in_progress | completed | ...
+     */
+    "Status": string;
+
+    /**
+     * success | failure | skipped | cancelled | ""
+     */
+    "Conclusion": string;
+
+    /**
+     * ISO8601
+     */
+    "StartedAt": string;
+    "CompletedAt": string;
+}
+
+/**
+ * WorkflowStepLog is the numbered step from GitHub's job metadata and ZIP.
+ */
+export interface WorkflowStepLog {
+    "Number": number;
+    "Content": string;
+}
+
+/**
+ * WorkflowTarget is a repository a workflow panel can operate on. ResolveTarget
+ * produces one from a remote name and URL.
+ */
+export interface WorkflowTarget {
+    /**
+     * "github" | "gitee" | "gitcode"
+     */
+    "Platform": string;
+
+    /**
+     * 远程主机，例如 "github.com"
+     */
+    "Host": string;
+
+    /**
+     * API 主机，例如 "api.github.com"；Gitee/GitCode 为空
+     */
+    "APIHost": string;
+    "Owner": string;
+    "Repo": string;
+
+    /**
+     * 远程名称，例如 "origin"
+     */
+    "Remote": string;
+
+    /**
+     * 平台网页地址，例如 https://github.com/owner/repo
+     */
+    "WebURL": string;
+}

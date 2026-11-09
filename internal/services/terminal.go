@@ -405,14 +405,16 @@ func (s *TerminalService) Start(path string, columns, rows int, profile string) 
 	if err != nil {
 		return "", err
 	}
+	cmd := exec.Command(shell.Shell, shell.Args...)
+	cmd.Dir = path
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	if err := configureTerminal(cmd, shell); err != nil {
+		return "", err
+	}
 	pty, err := xpty.NewPty(columns, rows)
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(shell.Shell, shell.Args...)
-	cmd.Dir = path
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
-	configureTerminal(cmd)
 	if err := pty.Start(cmd); err != nil {
 		_ = pty.Close()
 		return "", err

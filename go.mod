@@ -6,6 +6,8 @@ require (
 	github.com/charmbracelet/x/xpty v0.1.2
 	github.com/sergi/go-diff v1.4.0
 	github.com/wailsapp/wails/v3 v3.1.0
+	github.com/zalando/go-keyring v0.2.6
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -128,7 +130,6 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.17 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
-	github.com/zalando/go-keyring v0.2.6 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	gitlab.com/digitalxero/go-conventional-commit v1.0.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
@@ -144,7 +145,6 @@ require (
 	golang.org/x/tools v0.49.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9 // indirect
 	mvdan.cc/sh/v3 v3.12.0 // indirect
 )

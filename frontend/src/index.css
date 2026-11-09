@@ -171,6 +171,7 @@ pre,
   width: 204px;
   flex-shrink: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   border-right: 1px solid var(--border);
   padding: 8px;
 }

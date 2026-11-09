@@ -64,6 +64,7 @@ it("offers copy commands in the diff context menu", async () => {
 })
 it("does not checkout merely by browsing another worktree", async () => {
   const user = await ready()
+  await user.click(screen.getByRole("button", { name: /^Worktrees/ }))
   await user.dblClick(screen.getByRole("button", { name: "feature" }))
   await waitFor(() => expect(backend.selections).toContainEqual([alpha, linked]))
   expect(backend.writes).toHaveLength(0)

@@ -5,6 +5,7 @@ export {
   RepositoryService as Git,
   WorkspaceService as Workspace,
   TerminalService as Term,
+  WorkflowService as Workflow,
 } from "../../bindings/mygit-wails3/internal/services";
 export type {
   AIModel,
@@ -21,6 +22,17 @@ export type {
   TerminalSessionLayout,
   TerminalSessionState,
   UpdateInfo,
+  WorkflowTarget,
+  WorkflowCapabilities,
+  Workflow as WorkflowInfo,
+  WorkflowRun,
+  WorkflowList,
+  WorkflowRuns,
+  WorkflowAccount,
+  WorkflowInput,
+  WorkflowJob,
+  WorkflowJobs,
+  WorkflowStep,
 } from "../../bindings/mygit-wails3/internal/services/models";
 export type {
   State as WorkspaceState,

@@ -2,7 +2,22 @@ name: Package
 
 on:
   # 手动触发（Actions 页面 -> Run workflow）
+  # 可选模式：
+  #   verify  —— 只构建打包用于验证，不发版（产物在本次运行的 Artifacts 中）
+  #   release —— 构建后发布 GitHub Release（需填写版本号，如 0.3.2）
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "运行模式：verify=只验证打包不发版；release=构建并发布 Release"
+        type: choice
+        options:
+          - verify
+          - release
+        default: verify
+      version:
+        description: "发版版本号（仅 mode=release 时使用，不含前导 v），须与 CHANGELOG 中的 [版本] 一致"
+        type: string
+        required: false
   # 推送形如 v0.1.0 的 tag 时构建并发布 Release
   push:
     tags:
@@ -96,7 +111,12 @@ jobs:
   release:
     name: Publish release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    # 发版条件：
+    #   - 推送 v* tag；或
+    #   - 手动触发且 mode=release
+    if: >-
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'release')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -104,10 +124,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract changelog for ${{ github.ref_name }}
+      - name: Resolve version and tag
+        id: meta
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            version="${INPUT_VERSION#v}"
+            if [ -z "$version" ]; then
+              echo "::error::手动发版需要在 version 输入框填写版本号（不含前导 v）"
+              exit 1
+            fi
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+
+      - name: Extract changelog for ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.meta.outputs.version }}"
           awk -v version="$version" '
             index($0, "## [" version "]") == 1 { found = 1; next }
             found && /^## \[/ { exit }
@@ -117,10 +155,11 @@ jobs:
             echo "::error::No CHANGELOG entry found for ${version} in CHANGELOG.md"
             exit 1
           fi
-          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          # 手动发版时本地可能还没有该 tag，用已有 tag 生成对比链接（可能为空）。
+          previous="$(git describe --tags --abbrev=0 2>/dev/null || true)"
           if [ -n "$previous" ]; then
-            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
-              "$GITHUB_REPOSITORY" "$previous" "$GITHUB_REF_NAME" >> release-notes.md
+            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...v%s\n' \
+              "$GITHUB_REPOSITORY" "$previous" "$version" >> release-notes.md
           fi
           cat release-notes.md
 
@@ -133,5 +172,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # 手动发版时 tag 可能尚不存在，由 action 自动创建。
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: dist/**
           body_path: release-notes.md

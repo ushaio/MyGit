@@ -24,14 +24,16 @@ import { copy, report, useWorkbench } from "@/lib/workbench";
 import { basename } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { IconButton, Section } from "./shared";
+import { WorkflowsBar } from "./workflows";
 
 export type ViewSelection = {
-  mode: "changes" | "history" | "stash" | "compare";
+  mode: "changes" | "history" | "stash" | "compare" | "workflows";
   ref?: string;
   file?: string;
   from?: string;
   to?: string;
   reflog?: boolean;
+  workflow?: number;
 };
 export function RefsSidebar({
   view,
@@ -259,6 +261,7 @@ export function RefsSidebar({
       <Section
         title="Worktrees"
         count={repo.Worktrees?.length}
+        defaultOpen={false}
         action={
           <IconButton
             label="Add worktree"
@@ -325,7 +328,7 @@ export function RefsSidebar({
         onChange={(e) => setQuery(e.target.value)}
       />
       {pinned.length > 0 && (
-        <Section title="Pinned">
+        <Section title="Pinned" defaultOpen={false}>
           {allRefs
             .filter((ref) => pinned.includes(ref.Name))
             .map((ref) =>
@@ -343,6 +346,7 @@ export function RefsSidebar({
       <Section
         title="Branches"
         count={repo.Refs.Branches?.length || 0}
+        defaultOpen={false}
         action={
           <IconButton
             label="New branch"
@@ -359,6 +363,7 @@ export function RefsSidebar({
       <Section
         title="Remote branches"
         count={Object.keys(repo.Remotes || {}).length}
+        defaultOpen={false}
         action={
           <IconButton
             label="Add remote"
@@ -374,7 +379,7 @@ export function RefsSidebar({
           <ContextMenu key={name}>
             <ContextMenuTrigger asChild>
               <div>
-                <Section title={name}>
+                <Section title={name} defaultOpen={false}>
                   {filter(repo.Refs.Remotes)
                     .filter((ref) => ref.Name.startsWith(name + "/"))
                     .map((ref) => refRow(ref, "remote"))}
@@ -436,7 +441,7 @@ export function RefsSidebar({
         {filter(repo.Refs.Tags).map((ref) => refRow(ref, "tag"))}
       </Section>
       {!!repo.Stashes?.length && (
-        <Section title="Stashes" count={repo.Stashes.length}>
+        <Section title="Stashes" count={repo.Stashes.length} defaultOpen={false}>
           {repo.Stashes.map((stash) => (
             <ContextMenu key={stash.Hash}>
               <ContextMenuTrigger asChild>
@@ -498,6 +503,10 @@ export function RefsSidebar({
           ))}
         </Section>
       )}
+      <WorkflowsBar
+        activeWorkflow={view.mode === "workflows" ? view.workflow ?? -1 : -1}
+        onSelectWorkflow={(id) => onView({ mode: "workflows", workflow: id })}
+      />
     </aside>
   );
 }

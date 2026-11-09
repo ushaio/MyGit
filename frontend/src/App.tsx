@@ -3,34 +3,28 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
-  Code2,
   Download,
-  FolderOpen,
+  FileDiff,
   GitBranch,
   GitCommitHorizontal,
-  Globe,
   Loader2,
   RefreshCw,
-  TerminalSquare,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Desktop, action, changeRequest } from "@/lib/api";
+import { ProjectTools } from "@/components/project-tools";
+import { TerminalSwitcher } from "@/components/terminal-switcher";
+import { action, changeRequest } from "@/lib/api";
 import { basename, cn } from "@/lib/utils";
 import { LanguageProvider, useT } from "@/lib/i18n";
-import { report, useWorkbench } from "@/lib/workbench";
+import { useWorkbench } from "@/lib/workbench";
 import { ProjectPalette, ProjectSidebar } from "@/components/projects";
 import { CloseConfirmDialog } from "@/components/close-confirm";
 import { RestoreTerminalsDialog } from "@/components/restore-terminals";
 import { UpdatePrompt } from "@/components/update-prompt";
 import { RefsSidebar, type ViewSelection } from "@/components/refs";
 import { HistoryView } from "@/components/history";
+import { WorkflowRunsView } from "@/components/workflows";
 import { FileBrowser } from "@/components/files";
 import { ErrorNotice, IconButton, Loading } from "@/components/shared";
 
@@ -209,56 +203,7 @@ function WorkspaceWindow() {
                     className={cn("size-3.5", w.loading && "animate-spin")}
                   />
                 </IconButton>
-                <IconButton
-                  label="Open folder"
-                  onClick={() => report(Desktop.OpenPath(w.path))}
-                >
-                  <FolderOpen className="size-3.5" />
-                </IconButton>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7"
-                      aria-label={t("Terminal")}
-                    >
-                      <TerminalSquare className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onSelect={w.showTerminal}>
-                      {t("Terminal")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        report(Desktop.OpenTool(w.path, "terminal"))
-                      }
-                    >
-                      System terminal
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <IconButton
-                  label="Editor"
-                  onClick={() =>
-                    report(
-                      w.state?.Preferences.Editor
-                        ? Desktop.OpenTool(w.path, w.state.Preferences.Editor)
-                        : Desktop.OpenPath(w.path),
-                    )
-                  }
-                >
-                  <Code2 className="size-3.5" />
-                </IconButton>
-                {webURL && (
-                  <IconButton
-                    label="Open in browser"
-                    onClick={() => report(Desktop.OpenURL(webURL))}
-                  >
-                    <Globe className="size-3.5" />
-                  </IconButton>
-                )}
+                <ProjectTools path={w.path} webURL={webURL} />
               </div>
             )}
           </header>
@@ -294,8 +239,10 @@ function WorkspaceWindow() {
             {t(w.busy || w.background)}
           </span>
         )}
+        <TerminalSwitcher />
         {!w.busy && !w.background && w.repo && (
-          <span>
+          <span className="inline-flex shrink-0 items-center gap-1">
+            {!w.repo.Bare && <FileDiff aria-hidden="true" className="size-3.5" />}
             {w.repo.Bare
               ? t("Bare repository")
               : `${w.repo.Changes.Files?.length || 0} ${t("Changes")}`}
@@ -346,7 +293,9 @@ function RepositoryContent() {
       <div className="repository-body">
         <RefsSidebar view={view} onView={setView} />
         <div className="main-content">
-          {view.mode === "history" ? (
+          {view.mode === "workflows" ? (
+            <WorkflowRunsView workflowID={view.workflow ?? 0} />
+          ) : view.mode === "history" ? (
             <HistoryView view={view} onView={setView} />
           ) : view.mode === "compare" ? (
             <>

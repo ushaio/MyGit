@@ -81,16 +81,77 @@ func (s *DesktopService) OpenTool(path, tool string) error {
 		default:
 			cmd = exec.Command("x-terminal-emulator", "--working-directory="+path)
 		}
-	case "code":
-		cmd = exec.Command("code", "--", path)
-	case "cursor":
-		cmd = exec.Command("cursor", "--", path)
+	case "code", "cursor":
+		editor := findEditor(tool)
+		if editor == "" {
+			return errors.New(tool + " is not installed")
+		}
+		cmd = exec.Command(editor, "--", path)
 	default:
 		return errors.New("unsupported tool")
 	}
 	cmd.Dir = path
 	return cmd.Start()
 }
+
+// ToolAvailable reports whether an editor can actually be launched on this host.
+func (s *DesktopService) ToolAvailable(tool string) bool {
+	return findEditor(tool) != ""
+}
+
+func findEditor(tool string) string {
+	if tool != "code" && tool != "cursor" {
+		return ""
+	}
+	if runtime.GOOS == "windows" {
+		app, exe := "Microsoft VS Code", "Code.exe"
+		if tool == "cursor" {
+			app, exe = "Cursor", "Cursor.exe"
+		}
+		// Launch the native executable, not the .cmd shim, so project paths are
+		// passed as arguments without interpreting shell metacharacters.
+		candidates := []string{}
+		if cli, err := exec.LookPath(tool); err == nil {
+			candidates = append(candidates, filepath.Join(filepath.Dir(cli), "..", exe))
+		}
+		if native, err := exec.LookPath(exe); err == nil {
+			candidates = append(candidates, native)
+		}
+		for _, root := range []string{os.Getenv("LOCALAPPDATA"), os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
+			if root == "" {
+				continue
+			}
+			candidates = append(candidates, filepath.Join(root, app, exe), filepath.Join(root, "Programs", app, exe))
+		}
+		for _, candidate := range candidates {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return filepath.Clean(candidate)
+			}
+		}
+		return ""
+	}
+	if cli, err := exec.LookPath(tool); err == nil {
+		return cli
+	}
+	if runtime.GOOS == "darwin" {
+		app := "Visual Studio Code.app"
+		if tool == "cursor" {
+			app = "Cursor.app"
+		}
+		roots := []string{"/Applications"}
+		if home, err := os.UserHomeDir(); err == nil {
+			roots = append(roots, filepath.Join(home, "Applications"))
+		}
+		for _, root := range roots {
+			cli := filepath.Join(root, app, "Contents", "Resources", "app", "bin", tool)
+			if info, err := os.Stat(cli); err == nil && !info.IsDir() {
+				return cli
+			}
+		}
+	}
+	return ""
+}
+
 func (s *DesktopService) SaveText(name, text string) error {
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
 	path, err := s.app.Dialog.SaveFile().SetFilename(name).PromptForSingleSelection()
